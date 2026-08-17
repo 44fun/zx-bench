@@ -1,0 +1,437 @@
+// ============================================================
+// 模型调用模块 — OpenAI API 兼容
+// 支持 reasoning_content 分离（DeepSeek-R1、QwQ 等）
+// 支持流式调用获取精确 TTFT 和生成速度
+// ============================================================
+
+import type { ModelConfig, ModelParams, ModelResponse, TokenUsage, FinishReason, EvalConstraints } from '@zxbench/types';
+
+export interface CallModelOptions {
+  config: ModelConfig;
+  params: ModelParams;
+  systemPrompt?: string;
+  userPrompt: string;
+  signal?: AbortSignal;
+  /** 思考/输出约束（反拖尾）：注入 prompt 软约束 + 预算硬限制 */
+  constraints?: EvalConstraints;
+  /** 启用流式调用以获取精确的 TTFT（首 token 延迟）和生成速度（默认 false，保持向后兼容） */
+  stream?: boolean;
+}
+
+/** 调用模型（OpenAI Chat Completions API 兼容） */
+export async function callModel(options: CallModelOptions): Promise<ModelResponse> {
+  if (options.stream) {
+    return callModelStreaming(options);
+  }
+  return callModelNonStreaming(options);
+}
+
+// ========== 非流式调用（保留兼容） ==========
+
+async function callModelNonStreaming(options: CallModelOptions): Promise<ModelResponse> {
+  const { config, params, systemPrompt, userPrompt, signal, constraints } = options;
+  const startTime = Date.now();
+
+  const { controller, timeoutId, timeoutMs } = buildTimeout(constraints, params, signal);
+  const { messages, defaultMaxTokens } = buildMessages(config, params, systemPrompt, userPrompt, constraints);
+
+  const body: Record<string, unknown> = {
+    model: config.name,
+    messages,
+    max_tokens: defaultMaxTokens,
+    stream: false,
+  };
+
+  fillExtraParams(body, params);
+
+  const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const headers = buildHeaders(config);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Model API error ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json() as Record<string, unknown>;
+    const latencyMs = Date.now() - startTime;
+
+    return parseNonStreamingResponse(data, latencyMs);
+  } catch (err) {
+    throw wrapTimeoutError(err, timeoutMs);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// ========== 流式调用（精确 TTFT + 生成速度） ==========
+
+async function callModelStreaming(options: CallModelOptions): Promise<ModelResponse> {
+  const { config, params, systemPrompt, userPrompt, signal, constraints } = options;
+  const requestStartTime = Date.now();
+
+  const { controller, timeoutId, timeoutMs } = buildTimeout(constraints, params, signal);
+  const { messages, defaultMaxTokens } = buildMessages(config, params, systemPrompt, userPrompt, constraints);
+
+  const body: Record<string, unknown> = {
+    model: config.name,
+    messages,
+    max_tokens: defaultMaxTokens,
+    stream: true,
+    stream_options: { include_usage: true },
+  };
+
+  fillExtraParams(body, params);
+
+  const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const headers = buildHeaders(config);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      // 如果不支持 stream_options，回退到不带 stream_options 的流式
+      if (response.status === 400 && errorText.includes('stream_options')) {
+        console.warn(`[caller] Provider doesn't support stream_options, retrying without it`);
+        const body2 = { ...body };
+        delete (body2 as Record<string, unknown>).stream_options;
+        return await fetchAndParseStream(url, headers, body2, controller.signal, requestStartTime, timeoutMs);
+      }
+      throw new Error(`Model API error ${response.status}: ${errorText}`);
+    }
+
+    return await parseStreamResponse(response, requestStartTime, timeoutMs);
+  } catch (err) {
+    throw wrapTimeoutError(err, timeoutMs);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function fetchAndParseStream(
+  url: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+  requestStartTime: number,
+  timeoutMs: number,
+): Promise<ModelResponse> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Model API error ${response.status}: ${await response.text()}`);
+  }
+  return parseStreamResponse(response, requestStartTime, timeoutMs);
+}
+
+async function parseStreamResponse(
+  response: Response,
+  requestStartTime: number,
+  _timeoutMs: number,
+): Promise<ModelResponse> {
+  if (!response.body) {
+    throw new Error('Streaming response has no body');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  let content = '';
+  let reasoningContent = '';
+  let finishReason: FinishReason = 'unknown';
+  let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  let firstTokenTime = 0;
+  let lastTokenTime = 0;
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+
+        const dataStr = trimmed.slice(5).trim();
+        if (dataStr === '[DONE]') continue;
+        if (!dataStr) continue;
+
+        try {
+          const chunk = JSON.parse(dataStr);
+          const choice = (chunk.choices as Array<Record<string, unknown>>)?.[0];
+          if (!choice) continue;
+
+          const delta = choice.delta as Record<string, unknown> | undefined;
+          if (delta?.content) {
+            const text = String(delta.content);
+            if (firstTokenTime === 0) firstTokenTime = Date.now();
+            lastTokenTime = Date.now();
+            content += text;
+          }
+
+          const rc = delta?.reasoning_content || delta?.reasoning;
+          if (rc) {
+            reasoningContent += String(rc);
+          }
+
+          if (choice.finish_reason) {
+            finishReason = mapFinishReason(String(choice.finish_reason));
+          }
+
+          if (chunk.usage) {
+            const u = chunk.usage as Record<string, number>;
+            usage = {
+              inputTokens: u.prompt_tokens ?? 0,
+              outputTokens: u.completion_tokens ?? 0,
+              totalTokens: u.total_tokens ?? 0,
+            };
+          }
+        } catch {
+          // 跳过无法解析的 chunk
+        }
+      }
+    }
+
+    // 处理 buffer 中可能残留的最后一行
+    if (buffer.trim().startsWith('data:')) {
+      const dataStr = buffer.trim().slice(5).trim();
+      if (dataStr && dataStr !== '[DONE]') {
+        try {
+          const chunk = JSON.parse(dataStr);
+          if (chunk.usage) {
+            const u = chunk.usage as Record<string, number>;
+            usage = {
+              inputTokens: u.prompt_tokens ?? usage.inputTokens,
+              outputTokens: u.completion_tokens ?? usage.outputTokens,
+              totalTokens: u.total_tokens ?? usage.totalTokens,
+            };
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const totalTime = Date.now() - requestStartTime;
+  const ttftMs = firstTokenTime > 0 ? firstTokenTime - requestStartTime : totalTime;
+  const generationMs = firstTokenTime > 0 && lastTokenTime > 0 ? lastTokenTime - firstTokenTime : 0;
+
+  // 如果流中没有 usage 信息，用字符数估算（约 3 字符/token 混合中英文）
+  if (usage.outputTokens === 0 && content.length > 0) {
+    const estimated = Math.max(1, Math.round(content.length / 3));
+    usage.outputTokens = estimated;
+    usage.totalTokens = usage.inputTokens + estimated;
+  }
+
+  const tokensPerSecond = generationMs > 0
+    ? Math.round(usage.outputTokens / (generationMs / 1000))
+    : (totalTime > 0 ? Math.round(usage.outputTokens / (totalTime / 1000)) : 0);
+
+  return {
+    content,
+    reasoningContent: reasoningContent || undefined,
+    finishReason,
+    usage,
+    latencyMs: totalTime,
+    ttftMs,
+    generationMs,
+    tokensPerSecond,
+    raw: { streamed: true, contentLength: content.length },
+  };
+}
+
+// ========== 共享辅助 ==========
+
+function buildTimeout(
+  constraints: EvalConstraints | undefined,
+  params: ModelParams,
+  signal: AbortSignal | undefined,
+): { controller: AbortController; timeoutId: ReturnType<typeof setTimeout>; timeoutMs: number } {
+  // 默认 10 分钟：含本地模型队列排队时间，避免并发下排队挤占推理预算导致误判超时
+  const timeoutMs = constraints?.hardTimeLimitMs ?? params.timeout ?? 600_000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(new Error(`Model call timed out after ${timeoutMs}ms`)),
+    timeoutMs,
+  );
+  if (signal) {
+    signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
+  }
+  return { controller, timeoutId, timeoutMs };
+}
+
+function buildMessages(
+  config: ModelConfig,
+  params: ModelParams,
+  systemPrompt: string | undefined,
+  userPrompt: string,
+  constraints: EvalConstraints | undefined,
+): { messages: Array<{ role: string; content: string }>; defaultMaxTokens: number } {
+  const REASONING_DEFAULT_TOKENS = 32768;
+  const NORMAL_DEFAULT_TOKENS = 8192;
+  const isReasoningModel = config.reasoningModel === true;
+
+  const DEFAULT_SYSTEM = isReasoningModel
+    ? '请直接给出最终答案，禁止输出任何分析过程、思考过程或推理过程。不要解释你的思路，只输出最终结果。'
+    : '';
+  const REASONING_SUFFIX = isReasoningModel
+    ? '\n\nCRITICAL: You are a reasoning model. Your thinking/analysis tokens are SEPARATE from your output. DO NOT put your answer inside reasoning. Always produce the final answer in the content field.'
+    : '';
+
+  const constraintInstructions = buildConstraintInstructions(constraints);
+  const constraintSuffix = constraintInstructions ? `\n\n${constraintInstructions}` : '';
+
+  const messages: Array<{ role: string; content: string }> = [];
+  const effectiveSystem = (systemPrompt || DEFAULT_SYSTEM) + constraintSuffix;
+  if (effectiveSystem) {
+    messages.push({ role: 'system', content: effectiveSystem + REASONING_SUFFIX });
+  }
+  messages.push({ role: 'user', content: constraintSuffix ? `${userPrompt}${constraintSuffix}` : userPrompt });
+
+  let defaultMaxTokens = params.maxTokens ?? (isReasoningModel ? REASONING_DEFAULT_TOKENS : NORMAL_DEFAULT_TOKENS);
+  if (constraints?.maxTotalTokens) {
+    defaultMaxTokens = constraints.maxTotalTokens;
+  } else if (constraints?.maxReasoningTokens || constraints?.maxAnswerTokens) {
+    defaultMaxTokens = (constraints.maxReasoningTokens ?? 0) + (constraints.maxAnswerTokens ?? 0);
+  }
+
+  return { messages, defaultMaxTokens };
+}
+
+function fillExtraParams(body: Record<string, unknown>, params: ModelParams): void {
+  if (params.temperature != null) body.temperature = params.temperature;
+  if (params.topP != null) body.top_p = params.topP;
+  if (params.stop) body.stop = params.stop;
+  if (params.extra) {
+    Object.assign(body, params.extra);
+  }
+}
+
+function buildHeaders(config: ModelConfig): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (config.apiKey) {
+    headers['Authorization'] = `Bearer ${config.apiKey}`;
+  }
+  return headers;
+}
+
+function parseNonStreamingResponse(data: Record<string, unknown>, latencyMs: number): ModelResponse {
+  const choice = (data.choices as Array<Record<string, unknown>>)?.[0];
+  const message = choice?.message as Record<string, unknown> | undefined;
+
+  const reasoningContent = (message?.reasoning_content as string)
+    || (message?.reasoning as string)
+    || undefined;
+
+  const content = (message?.content as string) || '';
+  const finishReason = mapFinishReason(choice?.finish_reason as string);
+  const usage = data.usage as Record<string, number> | undefined;
+
+  return {
+    content,
+    reasoningContent,
+    finishReason,
+    usage: {
+      inputTokens: usage?.prompt_tokens ?? 0,
+      outputTokens: usage?.completion_tokens ?? 0,
+      totalTokens: usage?.total_tokens ?? 0,
+    },
+    latencyMs,
+    raw: data,
+  };
+}
+
+function wrapTimeoutError(err: unknown, timeoutMs: number): never {
+  if (err instanceof Error) {
+    const isTimeout = err.name === 'AbortError' || String(err.message).includes('timed out');
+    if (isTimeout) {
+      throw new Error(`Model call timed out after ${timeoutMs}ms: ${err.message}`);
+    }
+  }
+  throw err;
+}
+
+/** 映射 finish_reason */
+function mapFinishReason(reason?: string): FinishReason {
+  switch (reason) {
+    case 'stop': return 'stop';
+    case 'length': return 'length';
+    case 'content_filter': return 'content_filter';
+    case 'tool_calls': return 'tool_calls';
+    default: return 'unknown';
+  }
+}
+
+/** 带重试的模型调用 */
+export async function callModelWithRetry(
+  options: CallModelOptions,
+  maxRetries = 3,
+): Promise<ModelResponse> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await callModel(options);
+    } catch (err) {
+      lastError = err as Error;
+      // 超时错误不重试：达到 hardTimeLimitMs 仍未返回，说明是"思考拖尾"而非网络抖动，
+      // 重试大概率仍会超时，只会成倍浪费时间和占用本地模型队列。
+      const isTimeout =
+        (err as Error)?.name === 'AbortError'
+        || /timed out|timeout/i.test((err as Error)?.message || '');
+      if (isTimeout) {
+        throw err;
+      }
+      if (attempt < maxRetries) {
+        const delay = Math.min(1000 * 2 ** attempt, 10000);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  throw lastError ?? new Error('Model call failed');
+}
+
+/** 根据约束生成注入 prompt 的指令文本（软约束；硬校验在编排器中执行） */
+function buildConstraintInstructions(constraints?: EvalConstraints): string {
+  if (!constraints) return '';
+  const lines: string[] = [];
+
+  if (constraints.answerFirst) {
+    lines.push('请先给出最终答案，再给出原因或推理过程。不要把答案埋在长段分析中间，开头第一句必须直接给出答案。');
+  }
+  if (constraints.maxAnswerTokens) {
+    lines.push(`最终答案必须控制在 ${constraints.maxAnswerTokens} 个 token（约 ${Math.round(constraints.maxAnswerTokens * 0.75)} 个汉字或 ${Math.round(constraints.maxAnswerTokens * 3)} 个英文字符）以内。`);
+  }
+  if (constraints.maxReasoningTokens) {
+    lines.push(`思考过程必须控制在 ${constraints.maxReasoningTokens} 个 token 以内，不要过度展开、反复自我确认或输出冗余推理。`);
+  }
+  if (constraints.hardTimeLimitMs) {
+    lines.push(`请在 ${Math.round(constraints.hardTimeLimitMs / 1000)} 秒内完成回答。如果无法在时限内给出完整答案，请直接给出最可能的最终答案。`);
+  }
+
+  return lines.join(' ');
+}

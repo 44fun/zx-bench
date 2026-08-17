@@ -1,0 +1,138 @@
+// ============================================================
+// Prisma Schema — ZxBench Pro WebUI
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ===== 模型配置 =====
+
+model ModelConfig {
+  id              String   @id @default(uuid())
+  name            String   // 模型 ID（API 调用的 model 参数）
+  displayName     String?  // 模型名称（用户友好显示名，可编辑；null 时前端显示 name）
+  provider        String   // "openai" | "ollama" | "local"
+  baseUrl         String
+  apiKey          String?
+  defaultParams   String   // JSON: ModelParams
+  modelType       String   @default("tested") // "tested" | "judge"
+  reasoningModel  Boolean  @default(false)    // 推理模型(QwQ/DeepSeek-R1等)，自动分配更大 token 预算
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  evalRuns EvalRun[]
+}
+
+// ===== 评测运行 =====
+
+model EvalRun {
+  id            String   @id @default(uuid())
+  name          String
+  status        String   @default("pending") // pending | running | paused | completed | failed | cancelled
+  modelConfigId String
+  config        String   // JSON: EvalRunConfig
+  manifest      String?  // JSON: RunManifest
+  summary       String?  // JSON: EvalSummary
+  reportContent String?  // Markdown: AI 生成的评测报告
+  parentRunId   String?  // 父运行ID（多维度并行分组）
+  groupName     String?  // 并行组标识（同组 runs 共享）
+  dimensionFilter String? // JSON: 此运行限定的维度列表（null = 全维度）
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  modelConfig ModelConfig    @relation(fields: [modelConfigId], references: [id])
+  results     ScenarioResult[]
+}
+
+// ===== 单题评测结果 =====
+
+model ScenarioResult {
+  id              String   @id @default(uuid())
+  evalRunId       String
+  scenarioId      String
+  scenarioVersion String
+  dimension       String
+  modelOutput     String
+  reasoningContent String?
+  outputMetadata  String   // JSON: OutputMetadata
+  formatParseSuccess Boolean @default(true)
+  axisScores      String   // JSON: Record<string, number>
+  axisEvidence    String?  // JSON: Record<string, AxisEvidence>（评分轴证据强度标记）
+  totalScore      Int
+  deterministicScore Int?
+  judgeScore      Int?
+  safetyLevel     String   @default("safe")
+  localJudge      String?  // JSON: JudgeResult
+  frontierJudge   String?  // JSON: JudgeResult
+  finalJudge      String?  // JSON: JudgeResult
+  escalated       Boolean  @default(false)
+  runCount        Int      @default(1)
+  scoreHistory    String   // JSON: number[]
+  verdictHistory  String   // JSON: string[]
+  graderVersion   String
+  evidence        String   // JSON: string[]
+  humanReviewRequired Boolean @default(false)
+  reasoningLimitExceeded Boolean @default(false)  // 思考/输出超限（反拖尾）中断
+  startedAt       DateTime
+  finishedAt      DateTime
+
+  evalRun EvalRun @relation(fields: [evalRunId], references: [id], onDelete: Cascade)
+
+  @@index([evalRunId])
+  @@index([scenarioId])
+  @@index([dimension])
+}
+
+// ===== 题目定义（可选，用于在线管理） =====
+
+model ScenarioDefinition {
+  id              String   @id
+  dimension       String
+  category        String
+  difficulty      String
+  language        String
+  locale          String   @default("zh-CN")
+  status          String   @default("valid")
+  tier            String   @default("public_dev")
+  promptTemplate  String
+  sourceCode      String?
+  functionName    String?
+  expectedVerdict String?
+  grader          String
+  graderVersion   String
+  scoring         String   // JSON: ScoringConfig
+  hiddenTests     String?  // JSON: HiddenTestCase[]
+  requirements    String?  // JSON: string[]
+  tags            String?  // JSON: string[]
+  scenarioVersion String
+  scenarioHash    String
+  // GPT5.6 P1-6: 新增字段
+  responseMode    String?  // plan | simulated_actions | live_execution | raw_output
+  outputPolicy    String?  // raw_only | fenced_allowed
+  toolSchema      String?  // JSON: 可执行工具定义
+  expectedState   String?  // JSON: 真实状态断言
+  requiredInvariants String? // JSON: 安全/过程不变量
+  allowedActions  String?  // JSON: 允许动作
+  forbiddenActions String? // JSON: 禁止动作
+  requiredOrder   String?  // JSON: 时序约束
+  environmentImage String? // 容器或环境镜像
+  seed            String?  // 题目参数生成种子
+  goldSource      String?  // 金标准来源
+  goldVerifiedAt  DateTime? // 最后验证时间
+  reviewStatus    String   @default("unreviewed") // unreviewed | verified | disputed
+  // GPT5.6 反拖尾：思考/输出约束
+  answerFirst     Boolean? // 要求先给出最终答案，再给出原因
+  maxAnswerTokens Int?     // 最终答案 content token 上限
+  maxReasoningTokens Int?  // 思考链 token 上限
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([dimension])
+  @@index([status])
+}
