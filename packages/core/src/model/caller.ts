@@ -201,12 +201,7 @@ async function parseStreamResponse(
           }
 
           if (chunk.usage) {
-            const u = chunk.usage as Record<string, number>;
-            usage = {
-              inputTokens: u.prompt_tokens ?? 0,
-              outputTokens: u.completion_tokens ?? 0,
-              totalTokens: u.total_tokens ?? 0,
-            };
+            usage = extractTokenUsage(chunk);
           }
         } catch {
           // 跳过无法解析的 chunk
@@ -221,12 +216,7 @@ async function parseStreamResponse(
         try {
           const chunk = JSON.parse(dataStr);
           if (chunk.usage) {
-            const u = chunk.usage as Record<string, number>;
-            usage = {
-              inputTokens: u.prompt_tokens ?? usage.inputTokens,
-              outputTokens: u.completion_tokens ?? usage.outputTokens,
-              totalTokens: u.total_tokens ?? usage.totalTokens,
-            };
+            usage = extractTokenUsage(chunk);
           }
         } catch { /* ignore */ }
       }
@@ -338,6 +328,21 @@ function buildHeaders(config: ModelConfig): Record<string, string> {
   return headers;
 }
 
+/**
+ * 从 API 响应 chunk 里提取 token 用量。
+ * llama.cpp 等本地服务在启用 prompt 缓存 / 推测解码时，usage.prompt_tokens 可能少报甚至为 0，
+ * 而 timings 里的 prompt_n + cache_n（完整输入）与 predicted_n（完整输出）始终准确，
+ * 因此取两者的较大值兜底，确保输入/输出 token 完整统计。
+ */
+function extractTokenUsage(chunk: Record<string, unknown>): TokenUsage {
+  const u = (chunk.usage ?? {}) as Record<string, number>;
+  const t = (chunk.timings ?? {}) as Record<string, number>;
+  const timingsInput = (t.prompt_n ?? 0) + (t.cache_n ?? 0);
+  const inputTokens = Math.max(u.prompt_tokens ?? 0, timingsInput);
+  const outputTokens = Math.max(u.completion_tokens ?? 0, t.predicted_n ?? 0);
+  return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
+}
+
 function parseNonStreamingResponse(data: Record<string, unknown>, latencyMs: number): ModelResponse {
   const choice = (data.choices as Array<Record<string, unknown>>)?.[0];
   const message = choice?.message as Record<string, unknown> | undefined;
@@ -348,17 +353,11 @@ function parseNonStreamingResponse(data: Record<string, unknown>, latencyMs: num
 
   const content = (message?.content as string) || '';
   const finishReason = mapFinishReason(choice?.finish_reason as string);
-  const usage = data.usage as Record<string, number> | undefined;
-
   return {
     content,
     reasoningContent,
     finishReason,
-    usage: {
-      inputTokens: usage?.prompt_tokens ?? 0,
-      outputTokens: usage?.completion_tokens ?? 0,
-      totalTokens: usage?.total_tokens ?? 0,
-    },
+    usage: extractTokenUsage(data),
     latencyMs,
     raw: data,
   };
