@@ -6,6 +6,7 @@ import ReactECharts from 'echarts-for-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import ScoreFormulaTooltip from '../components/ScoreFormulaTooltip';
 import { useTheme } from '../theme';
+import { useLanguage } from '../i18n';
 
 interface DimensionReport {
   dimension: string;
@@ -130,6 +131,7 @@ export default function Report() {
   const [aiReport, setAiReport] = useState<string | null>(null);
   const chartRef = useRef<ReactECharts>(null);
   const { mode } = useTheme();
+  const { lang } = useLanguage();
 
   useEffect(() => {
     if (!id) return;
@@ -151,7 +153,11 @@ export default function Report() {
     if (!id) return;
     setGenerating(true);
     try {
-      const res = await fetch(`/api/runs/${id}/report/generate`, { method: 'POST' });
+      const res = await fetch(`/api/runs/${id}/report/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: lang }),
+      });
       const data = await res.json();
       if (data.success) {
         setAiReport(data.data.reportContent);

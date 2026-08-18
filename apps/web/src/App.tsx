@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from './theme';
+import { useLanguage } from './i18n';
 import AnimatedBackground from './components/AnimatedBackground';
 import Dashboard from './pages/Dashboard';
 import EvalCreate from './pages/EvalCreate';
@@ -32,35 +33,36 @@ import Leaderboard from './pages/Leaderboard';
 import ModelValue from './pages/ModelValue';
 
 const menuItems = [
-  { key: '/', icon: <DashboardOutlined />, label: '总览' },
-  { key: '/eval/create', icon: <PlayCircleOutlined />, label: '创建评测' },
-  { key: '/eval/live', icon: <MonitorOutlined />, label: '实时监控' },
-  { key: '/eval/history', icon: <HistoryOutlined />, label: '评测历史' },
-  { key: '/reports', icon: <FileSearchOutlined />, label: '评测报告' },
-  { key: '/leaderboard', icon: <TrophyOutlined />, label: '排行榜' },
-  { key: '/scenarios', icon: <FileTextOutlined />, label: '题目管理' },
-  { key: '/compare', icon: <BarChartOutlined />, label: '模型对比' },
-  { key: '/value', icon: <DollarOutlined />, label: '模型性价比' },
-  { key: '/settings', icon: <SettingOutlined />, label: '系统设置' },
+  { key: '/', icon: <DashboardOutlined />, label: 'menu.dashboard' },
+  { key: '/eval/create', icon: <PlayCircleOutlined />, label: 'menu.create' },
+  { key: '/eval/live', icon: <MonitorOutlined />, label: 'menu.live' },
+  { key: '/eval/history', icon: <HistoryOutlined />, label: 'menu.history' },
+  { key: '/reports', icon: <FileSearchOutlined />, label: 'menu.reports' },
+  { key: '/leaderboard', icon: <TrophyOutlined />, label: 'menu.leaderboard' },
+  { key: '/scenarios', icon: <FileTextOutlined />, label: 'menu.scenarios' },
+  { key: '/compare', icon: <BarChartOutlined />, label: 'menu.compare' },
+  { key: '/value', icon: <DollarOutlined />, label: 'menu.value' },
+  { key: '/settings', icon: <SettingOutlined />, label: 'menu.settings' },
 ];
 
 const pageTitles: Record<string, string> = {
-  '/': '总览',
-  '/eval/create': '创建评测',
-  '/eval/live': '实时监控',
-  '/eval/history': '评测历史',
-  '/reports': '评测报告',
-  '/leaderboard': '排行榜',
-  '/scenarios': '题目管理',
-  '/compare': '模型对比',
-  '/value': '模型性价比',
-  '/settings': '系统设置',
+  '/': 'menu.dashboard',
+  '/eval/create': 'menu.create',
+  '/eval/live': 'menu.live',
+  '/eval/history': 'menu.history',
+  '/reports': 'menu.reports',
+  '/leaderboard': 'menu.leaderboard',
+  '/scenarios': 'menu.scenarios',
+  '/compare': 'menu.compare',
+  '/value': 'menu.value',
+  '/settings': 'menu.settings',
 };
 
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const { mode, toggle } = useTheme();
+  const { t, lang, setLang } = useLanguage();
 
   const handleMenuClick = async (key: string) => {
     if (key === '/eval/live') {
@@ -95,7 +97,7 @@ export default function App() {
   };
 
   const selectedKey = getSelectedKey();
-  const currentTitle = pageTitles[selectedKey] || '智秀大模型评测';
+  const currentTitle = t(pageTitles[selectedKey] || 'common.appName');
 
   return (
     <div className="swiss-layout">
@@ -118,7 +120,7 @@ export default function App() {
               onClick={() => handleMenuClick(item.key)}
             >
               {item.icon}
-              <span>{item.label}</span>
+              <span>{t(item.label)}</span>
             </div>
           ))}
         </nav>
@@ -135,6 +137,11 @@ export default function App() {
             {currentTitle}
           </div>
           <div className="swiss-header-actions">
+            <Tooltip title={lang === 'zh' ? 'Switch to English' : '切换为中文'}>
+              <button className="theme-toggle" onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')} style={{ marginRight: 8 }}>
+                {lang === 'zh' ? 'EN' : '中'}
+              </button>
+            </Tooltip>
             <Tooltip title={mode === 'dark' ? '切换到亮色' : '切换到暗色'}>
               <button className="theme-toggle" onClick={toggle}>
                 {mode === 'dark' ? <BulbFilled /> : <BulbOutlined />}

@@ -47,8 +47,28 @@ function dimensionLabel(dim: string): string {
     agent_workflow: '智能体工作流',
     cli_deep_tasks: '深度CLI任务',
     program: '编程能力',
+    hallucination_resistance: '幻觉抵抗',
   };
   return map[dim] || dim;
+}
+
+/** 维度短名 → 英文标签 */
+const DIMENSION_LABELS_EN: Record<string, string> = {
+  data_extraction: 'Data Extraction',
+  instruction_following: 'Instruction Following',
+  reasoning_math: 'Reasoning & Math',
+  structured_output: 'Structured Output',
+  tool_cli_workflow: 'Tool/CLI Workflow',
+  safety_authority: 'Safety & Authority',
+  agent_workflow: 'Agent Workflow',
+  cli_deep_tasks: 'Deep CLI Tasks',
+  program: 'Programming',
+  hallucination_resistance: 'Hallucination Resistance',
+};
+
+/** 按语言返回维度标签 */
+function dimensionLabelFor(dim: string, lang: 'zh' | 'en' = 'zh'): string {
+  return lang === 'en' ? (DIMENSION_LABELS_EN[dim] || dim) : dimensionLabel(dim);
 }
 
 /**
@@ -2057,6 +2077,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ===== AI 报告生成 =====
   app.post('/api/runs/:id/report/generate', async (request, reply) => {
     const { id } = request.params as { id: string };
+    const lang = (request.body as { language?: string } | undefined)?.language === 'en' ? 'en' : 'zh';
 
     // 获取运行记录
     const run = await prisma.evalRun.findUnique({
@@ -2165,7 +2186,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         }
         return {
           dimension: dim,
-          dimensionLabel: dimensionLabel(dim),
+          dimensionLabel: dimensionLabelFor(dim, lang),
           count: d.scores.length,
           averageScore: avg, maxScore: max, minScore: min, medianScore: median,
           passRate: d.scores.length > 0 ? Math.round((d.passed / d.scores.length) * 100) : 0,
@@ -2198,7 +2219,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           return {
             scenarioId: r.scenarioId,
             dimension: r.dimension,
-            dimensionLabel: dimensionLabel(r.dimension),
+            dimensionLabel: dimensionLabelFor(r.dimension, lang),
             totalScore: r.totalScore,
             judgeScore: r.judgeScore,
             evidence,
@@ -2298,7 +2319,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // ===== 模型对比报告 =====
   app.post('/api/reports/compare', async (request, reply) => {
-    const body = request.body as { runIds?: string[]; modelConfigIds?: string[] };
+    const body = request.body as { runIds?: string[]; modelConfigIds?: string[]; language?: string };
+    const lang = body.language === 'en' ? 'en' : 'zh';
     const runIds: string[] = body.runIds || [];
     const modelConfigIds: string[] = body.modelConfigIds || [];
 
@@ -2394,7 +2416,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         const dimensions = Array.from(dimMap.entries())
           .map(([dim, d]) => ({
             dimension: dim,
-            dimensionLabel: dimensionLabel(dim),
+            dimensionLabel: dimensionLabelFor(dim, lang),
             count: d.scores.length,
             averageScore: Math.round((lbDimAvgs.get(dim) || 0) * 100) / 100,
             passRate: d.scores.length > 0 ? Math.round((d.passed / d.scores.length) * 100) : 0,
@@ -2429,6 +2451,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const reportResult = await generateCompareReport({
         judgeConfig,
         data: { models: modelData },
+        language: lang,
         onProgress: (stage) => console.log(`[report/compare] ${stage}`),
       });
 

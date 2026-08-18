@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Form, Input, Select, Button, Switch, InputNumber, Slider, Radio, message, Alert, Divider, Typography, Row, Col } from 'antd';
 import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '../i18n';
 
 const { Text } = Typography;
 
@@ -34,6 +35,7 @@ export default function EvalCreate() {
   const [selectedModelReasoning, setSelectedModelReasoning] = useState(false);
   const [mode, setMode] = useState<'single' | 'batch'>('single');
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   useEffect(() => {
     fetch('/api/models')
@@ -130,7 +132,7 @@ export default function EvalCreate() {
         <Form layout="vertical" onFinish={onFinish}>
           {/* ===== 测试模式：单模型 / 多模型并行 ===== */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 13, color: 'var(--text-helper)', marginBottom: 8 }}>测试模式</div>
+            <div style={{ fontSize: 13, color: 'var(--text-helper)', marginBottom: 8 }}>{t('eval.testMode')}</div>
             <Radio.Group value={mode} onChange={(e) => setMode(e.target.value)}>
               <Radio.Button value="single">单模型（原模式）</Radio.Button>
               <Radio.Button value="batch">多模型并行</Radio.Button>
@@ -146,7 +148,7 @@ export default function EvalCreate() {
           <Row gutter={24}>
             <Col span={12}>
               <Form.Item
-                label="评测名称"
+                label={t('eval.name')}
                 name="name"
                 rules={mode === 'batch' ? [] : [{ required: true }]}
                 tooltip="为本次评测起一个易于识别的名称，用于在评测列表和历史记录中查找（多模型并行时作为批量任务名前缀）"
@@ -157,7 +159,7 @@ export default function EvalCreate() {
             <Col span={12}>
               {mode === 'batch' ? (
                 <Form.Item
-                  label="选择被测模型（可多选）"
+                  label={t('eval.model')}
                   name="modelConfigIds"
                   rules={[{ required: true, message: '请至少选择一个被测模型' }]}
                   tooltip="可同时选择多个不同模型，点击「开始并行评测」后将并发执行，各模型评测任务相互独立、错误互不干扰"
@@ -171,7 +173,7 @@ export default function EvalCreate() {
                   </Select>
                 </Form.Item>
               ) : (
-                <Form.Item label="选择被测模型" name="modelConfigId" rules={[{ required: true }]} tooltip="选择要评测的模型。推理模型（QwQ/DeepSeek-R1等）会自动使用更大的 token 预算">
+                <Form.Item label={t('eval.model')} name="modelConfigId" rules={[{ required: true }]} tooltip="选择要评测的模型。推理模型（QwQ/DeepSeek-R1等）会自动使用更大的 token 预算">
                   <Select placeholder="选择要评测的模型"
                     onChange={(id) => {
                       const model = testedModels.find(m => m.id === id);
@@ -198,7 +200,7 @@ export default function EvalCreate() {
 
           {/* ===== 评测维度选择 ===== */}
           <Form.Item
-            label="评测维度"
+            label={t('eval.dimensions')}
             name="dimensionIds"
             tooltip="选择本次评测覆盖的维度。不选则跑全部 10 个维度；只选部分维度可大幅缩短耗时，适合针对性复测或补测"
           >
@@ -237,21 +239,21 @@ export default function EvalCreate() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item label="每题运行次数" name="runsPerQuestion" initialValue={1} tooltip="每道测试题重复运行的次数。多次运行可减少随机性影响">
+              <Form.Item label={t('eval.runsPerQuestion')} name="runsPerQuestion" initialValue={1} tooltip="每道测试题重复运行的次数。多次运行可减少随机性影响">
                 <InputNumber min={1} max={10} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
           </Row>
 
           <Divider orientation="left" plain style={{ fontSize: 13, color: 'var(--text-helper)' }}>
-            高级选项
+            {t('eval.advanced')}
           </Divider>
 
           {/* ===== 开关选项：横向网格排列 ===== */}
           <Row gutter={[24, 16]}>
             <Col span={6}>
               <Form.Item
-                label="AI Judge"
+                label={t('eval.aiJudge')}
                 name="judgeEnabled"
                 valuePropName="checked"
                 tooltip="开启后，AI Judge 模型会对被测模型的回答进行二次评分复核"
@@ -261,7 +263,7 @@ export default function EvalCreate() {
             </Col>
             <Col span={6}>
               <Form.Item
-                label="争议升级"
+                label={t('eval.escalation')}
                 name="escalationEnabled"
                 valuePropName="checked"
                 tooltip="当规则评分与 AI Judge 评分存在显著分歧时，自动触发更高级别复核"
@@ -271,7 +273,7 @@ export default function EvalCreate() {
             </Col>
             <Col span={6}>
               <Form.Item
-                label="安全红线检查"
+                label={t('eval.safetyCheck')}
                 name="safetyCheckEnabled"
                 valuePropName="checked"
                 initialValue={true}
@@ -282,7 +284,7 @@ export default function EvalCreate() {
             </Col>
             <Col span={6}>
               <Form.Item
-                label="隐藏测试"
+                label={t('eval.hiddenTests')}
                 name="hiddenTestsEnabled"
                 valuePropName="checked"
                 initialValue={true}
@@ -293,7 +295,7 @@ export default function EvalCreate() {
             </Col>
             <Col span={6}>
               <Form.Item
-                label="结构化输出"
+                label={t('eval.structuredOutput')}
                 name="structuredOutputEnabled"
                 valuePropName="checked"
                 tooltip="在 structured_output 维度中要求模型以 JSON 等结构化格式输出"
@@ -304,7 +306,7 @@ export default function EvalCreate() {
             {judgeEnabled && (
               <Col span={12}>
                 <Form.Item
-                  label="AI Judge 模型"
+                  label={t('eval.judgeModel')}
                   name="judgeModelConfigId"
                   preserve
                   tooltip="选择用于评分复核的模型。若不选择，系统会自动使用第一个配置的 Judge 模型"
@@ -327,7 +329,7 @@ export default function EvalCreate() {
 
           {/* ===== 并发度 ===== */}
           <Form.Item
-            label="并发题目数"
+            label={t('eval.parallelism')}
             name="parallelism"
             initialValue={4}
             tooltip="同时并发处理的题目数量，上限 4（= 最多 4 题并发 = 最多 4 维度并发）。设为 1 则为串行测试"
@@ -344,7 +346,7 @@ export default function EvalCreate() {
 
           {/* ===== 并行模式 ===== */}
           <Form.Item
-            label="并行模式"
+            label={t('eval.parallelMode')}
             name="parallelMode"
             initialValue="global"
             tooltip="全局并发池：所有 worker 共享轮转交叉队列，不同维度题目交替处理。维度独立并行：每个维度分配合 worker，适合需要所有维度同时推进的场景"
@@ -359,7 +361,7 @@ export default function EvalCreate() {
           </Text>
 
           <Divider orientation="left" plain style={{ fontSize: 13, color: 'var(--text-helper)' }}>
-            思考约束（反拖尾）
+            {t('eval.constraints')}
           </Divider>
           <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
             用于应对推理模型（QwQ/DeepSeek-R1 等）无限思考导致超时/上下文过长的问题。开启后约束以指令注入 prompt（软约束），
@@ -370,7 +372,7 @@ export default function EvalCreate() {
           <Row gutter={[24, 16]}>
             <Col span={6}>
               <Form.Item
-                label="先答案后原因"
+                label={t('eval.answerFirst')}
                 name="answerFirst"
                 valuePropName="checked"
                 tooltip="在 prompt 中强制要求先给出最终答案，再给出原因。提高答案提取成功率，避免答案埋在长段思考里"
@@ -380,7 +382,7 @@ export default function EvalCreate() {
             </Col>
             <Col span={6}>
               <Form.Item
-                label="思考链上限 (token)"
+                label={t('eval.maxReasoningTokens')}
                 name="maxReasoningTokens"
                 tooltip="思考链（reasoning_content）允许的最大 token 数。硬校验：预算耗尽且无有效答案时立即判超限。0 表示不限制"
               >
@@ -389,7 +391,7 @@ export default function EvalCreate() {
             </Col>
             <Col span={6}>
               <Form.Item
-                label="答案上限 (token)"
+                label={t('eval.maxAnswerTokens')}
                 name="maxAnswerTokens"
                 tooltip="最终答案（content）允许的最大 token 数。与思考链上限共同决定单题总预算"
               >
@@ -398,7 +400,7 @@ export default function EvalCreate() {
             </Col>
             <Col span={6}>
               <Form.Item
-                label="单题硬时限 (秒)"
+                label={t('eval.hardTimeLimitSec')}
                 name="hardTimeLimitSec"
                 tooltip="单题调用模型的最长等待时间，超时立即中断并判超限。留空则使用默认 300 秒（5 分钟）"
               >
@@ -407,7 +409,7 @@ export default function EvalCreate() {
             </Col>
             <Col span={6}>
               <Form.Item
-                label="超限处置"
+                label={t('eval.onLimit')}
                 name="onLimit"
                 initialValue="fail"
                 tooltip="判 0 分（fail）：超限即失败，最快推进队列。降权（degrade）：记录证据但按 0 分处理。标记复核（flag）：置为需人工复核"
@@ -423,7 +425,7 @@ export default function EvalCreate() {
 
           <Form.Item>
             <Button type="primary" htmlType="submit" loading={loading} size="large">
-              {mode === 'batch' ? '开始并行评测' : '开始评测'}
+              {mode === 'batch' ? t('eval.startBatch') : t('eval.start')}
             </Button>
           </Form.Item>
         </Form>

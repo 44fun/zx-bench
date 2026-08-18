@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Form, Input, Select, Button, Table, message, Popconfirm, Space, Tag, Switch, Alert, Modal } from 'antd';
+import { useLanguage } from '../i18n';
 
 interface ModelItem {
   id: string;
@@ -17,6 +18,7 @@ const MODEL_TYPE_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 export default function ModelConfigPage() {
+  const { t } = useLanguage();
   const [models, setModels] = useState<ModelItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -70,7 +72,7 @@ export default function ModelConfigPage() {
     try {
       const values = await form.validateFields(['name', 'baseUrl']);
       setTesting(true);
-      message.loading({ content: '正在测试连接…', key: 'conn-test', duration: 0 });
+      message.loading({ content: '正在' + t('model.testConn') + '…', key: 'conn-test', duration: 0 });
       const res = await fetch('/api/models/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -156,37 +158,37 @@ export default function ModelConfigPage() {
 
   return (
     <div>
-      <h2 className="swiss-page-title">模型配置</h2>
+      <h2 className="swiss-page-title">{t('model.title')}</h2>
 
       <div className="swiss-card" style={{ marginBottom: 24, maxWidth: 580 }}>
-        <div className="swiss-card-title">添加模型</div>
+        <div className="swiss-card-title">{t('model.add')}</div>
         <Form form={form} layout="vertical" onFinish={onFinish} style={{ maxWidth: 500 }}>
-          <Form.Item label="模型 ID" name="name" rules={[{ required: true }]} tooltip="模型的真实 API 模型 ID（用于直接调用端点），如 hermes3.6-35b、qwen3.8-max。注意：这是调用参数，不是显示名称">
+          <Form.Item label={t('model.id')} name="name" rules={[{ required: true }]} tooltip="模型的真实 API 模型 ID（用于直接调用端点），如 hermes3.6-35b、qwen3.8-max。注意：这是调用参数，不是显示名称">
             <Input placeholder="例如：hermes3.6-35b" />
           </Form.Item>
-          <Form.Item label="模型名称（可选）" name="displayName" tooltip="用户友好的显示名称，用于界面展示和区分；不填则默认与模型 ID 相同">
+          <Form.Item label={t('model.displayName')} name="displayName" tooltip="用户友好的显示名称，用于界面展示和区分；不填则默认与模型 ID 相同">
             <Input placeholder="例如：我的 35B 编程模型（不填则同模型 ID）" />
           </Form.Item>
-          <Form.Item label="模型类型" name="modelType" initialValue="tested" tooltip="被测模型：参与 9 大维度评测的模型；AI Judge：用于对被测模型的回答进行二次评分复核的模型，自身不参与评测">
+          <Form.Item label={t('model.type')} name="modelType" initialValue="tested" tooltip="被测模型：参与 9 大维度评测的模型；AI Judge：用于对被测模型的回答进行二次评分复核的模型，自身不参与评测">
             <Select>
               <Select.Option value="tested">被测模型（参与评测的模型）</Select.Option>
               <Select.Option value="judge">AI Judge（评分复核模型）</Select.Option>
             </Select>
           </Form.Item>
-          <Form.Item label="Provider" name="provider" initialValue="openai" tooltip="选择 API 提供商类型。OpenAI Compatible：兼容 OpenAI 接口格式的服务（如 vLLM、LM Studio 等）；Ollama：本地 Ollama 服务；Local：本地自定义服务">
+          <Form.Item label={t('model.provider')} name="provider" initialValue="openai" tooltip="选择 API 提供商类型。OpenAI Compatible：兼容 OpenAI 接口格式的服务（如 vLLM、LM Studio 等）；Ollama：本地 Ollama 服务；Local：本地自定义服务">
             <Select>
               <Select.Option value="openai">OpenAI Compatible</Select.Option>
               <Select.Option value="ollama">Ollama</Select.Option>
               <Select.Option value="local">Local</Select.Option>
             </Select>
           </Form.Item>
-          <Form.Item label="Base URL" name="baseUrl" rules={[{ required: true }]} tooltip="模型服务的 API 地址。OpenAI 兼容格式通常以 /v1 结尾，Ollama 默认为 http://localhost:11434/v1">
+          <Form.Item label={t('model.baseUrl')} name="baseUrl" rules={[{ required: true }]} tooltip="模型服务的 API 地址。OpenAI 兼容格式通常以 /v1 结尾，Ollama 默认为 http://localhost:11434/v1">
             <Input placeholder="http://localhost:11434/v1" />
           </Form.Item>
-          <Form.Item label="API Key" name="apiKey" tooltip="访问模型服务的密钥。本地部署的模型（如 Ollama）通常无需填写；远程服务（如 OpenAI API、第三方推理平台）需要提供有效密钥">
+          <Form.Item label={t('model.apiKey')} name="apiKey" tooltip="访问模型服务的密钥。本地部署的模型（如 Ollama）通常无需填写；远程服务（如 OpenAI API、第三方推理平台）需要提供有效密钥">
             <Input.Password placeholder="可选" />
           </Form.Item>
-          <Form.Item label="推理模型" name="reasoningModel" valuePropName="checked" initialValue={false}
+          <Form.Item label={t('model.reasoning')} name="reasoningModel" valuePropName="checked" initialValue={false}
             tooltip="推理模型（如 QwQ、DeepSeek-R1）会产生大量思考链 tokens，勾选后系统自动分配更大的 token 预算（默认 32768），避免思考链耗尽输出配额导致空回复">
             <Switch />
           </Form.Item>
@@ -202,14 +204,14 @@ export default function ModelConfigPage() {
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit" loading={loading}>{modelType === 'judge' ? '测试并添加' : '添加模型'}</Button>
-              <Button onClick={onTestConnection} loading={testing}>测试连接</Button>
+              <Button onClick={onTestConnection} loading={testing}>{t('model.testConn')}</Button>
             </Space>
           </Form.Item>
         </Form>
       </div>
 
       <div className="swiss-card" style={{ marginBottom: 24 }}>
-        <div className="swiss-card-title">被测模型</div>
+        <div className="swiss-card-title">{t('model.testedList')}</div>
         <Table
           dataSource={testedModels}
           rowKey="id"
@@ -236,7 +238,7 @@ export default function ModelConfigPage() {
       </div>
 
       <div className="swiss-card">
-        <div className="swiss-card-title">AI Judge 模型</div>
+        <div className="swiss-card-title">{t('model.judgeList')}</div>
         <Table
           dataSource={judgeModels}
           rowKey="id"
@@ -264,13 +266,13 @@ export default function ModelConfigPage() {
           <Form.Item label="模型名称（显示名）" name="displayName" tooltip="用户友好的显示名称；留空则显示模型 ID">
             <Input placeholder="留空则与模型 ID 相同" />
           </Form.Item>
-          <Form.Item label="模型 ID" name="name" rules={[{ required: true }]} tooltip="API 调用的 model 参数，修改会影响实际调用">
+          <Form.Item label={t('model.id')} name="name" rules={[{ required: true }]} tooltip="API 调用的 model 参数，修改会影响实际调用">
             <Input />
           </Form.Item>
-          <Form.Item label="Base URL" name="baseUrl" rules={[{ required: true }]}>
+          <Form.Item label={t('model.baseUrl')} name="baseUrl" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item label="推理模型" name="reasoningModel" valuePropName="checked">
+          <Form.Item label={t('model.reasoning')} name="reasoningModel" valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

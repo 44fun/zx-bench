@@ -1,5 +1,7 @@
 # ZxBench · 本地大模型评测系统
 
+[English](README.en.md) · 中文
+
 > 在一台机器上，对任意大模型（本地 GGUF / Ollama / OpenAI 兼容 API）跑完 10 大维度、502 道基准题，产出可复现的综合分、维度雷达、排行榜、AI 深度报告与性价比分析。
 
 [![CI](https://github.com/suncityldp/zx-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/suncityldp/zx-bench/actions/workflows/ci.yml)

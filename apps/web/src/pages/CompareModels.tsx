@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Checkbox, message, Spin, Tag, Empty, Tooltip, Popconfirm, Segmented } from 'antd';
 import { RobotOutlined, ArrowLeftOutlined, TrophyOutlined, DownloadOutlined, FileTextOutlined, FilePdfOutlined, DeleteOutlined, ClearOutlined, HistoryOutlined } from '@ant-design/icons';
 import MarkdownRenderer from '../components/MarkdownRenderer';
+import { useLanguage } from '../i18n';
 
 interface ModelEntry {
   modelId: string;
@@ -49,6 +50,7 @@ function saveHistory(list: ReportRecord[]) {
 
 export default function CompareModels() {
   const navigate = useNavigate();
+  const { lang } = useLanguage();
   const [models, setModels] = useState<ModelEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -137,7 +139,7 @@ export default function CompareModels() {
       const res = await fetch('/api/reports/compare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelConfigIds: selectedIds }),
+        body: JSON.stringify({ modelConfigIds: selectedIds, language: lang }),
       });
       const data = await res.json();
       if (data.success) {

@@ -8,7 +8,10 @@ import type { ModelConfig, ModelParams } from '@zxbench/types';
 import { callModel } from '../model/caller.js';
 import {
   REPORT_SYSTEM_PROMPT,
+  REPORT_SYSTEM_PROMPT_EN,
   COMPARE_REPORT_SYSTEM_PROMPT,
+  COMPARE_REPORT_SYSTEM_PROMPT_EN,
+  type ReportLanguage,
   type ReportUserPromptData,
   type CompareReportUserPromptData,
   buildReportUserPrompt,
@@ -22,6 +25,8 @@ export interface GenerateReportOptions {
   judgeParams?: Partial<ModelParams>;
   /** 报告数据 */
   data: ReportUserPromptData;
+  /** 报告语言（跟随 UI 界面语言） */
+  language?: ReportLanguage;
   /** 进度回调 */
   onProgress?: (stage: string) => void;
 }
@@ -30,6 +35,8 @@ export interface GenerateCompareReportOptions {
   judgeConfig: ModelConfig;
   judgeParams?: Partial<ModelParams>;
   data: CompareReportUserPromptData;
+  /** 报告语言（跟随 UI 界面语言） */
+  language?: ReportLanguage;
   onProgress?: (stage: string) => void;
 }
 
@@ -62,10 +69,11 @@ export interface ReportResult {
  * 调用 Judge 模型，传入标准化系统提示词 + 数据打包后的用户提示词
  */
 export async function generateReport(options: GenerateReportOptions): Promise<ReportResult> {
-  const { judgeConfig, judgeParams, data, onProgress } = options;
+  const { judgeConfig, judgeParams, data, language, onProgress } = options;
+  const systemPrompt = language === 'en' ? REPORT_SYSTEM_PROMPT_EN : REPORT_SYSTEM_PROMPT;
 
   onProgress?.('构建报告提示词');
-  const userPrompt = buildReportUserPrompt(data);
+  const userPrompt = buildReportUserPrompt(data, language);
 
   onProgress?.('调用 Judge 模型生成报告');
   const startTime = Date.now();
@@ -77,7 +85,7 @@ export async function generateReport(options: GenerateReportOptions): Promise<Re
       maxTokens: 8192,   // 报告可能较长，给足够空间
       ...judgeParams,
     },
-    systemPrompt: REPORT_SYSTEM_PROMPT,
+    systemPrompt,
     userPrompt,
   });
 
@@ -110,10 +118,11 @@ export async function generateReport(options: GenerateReportOptions): Promise<Re
 export async function generateCompareReport(
   options: GenerateCompareReportOptions,
 ): Promise<ReportResult> {
-  const { judgeConfig, judgeParams, data, onProgress } = options;
+  const { judgeConfig, judgeParams, data, language, onProgress } = options;
+  const systemPrompt = language === 'en' ? COMPARE_REPORT_SYSTEM_PROMPT_EN : COMPARE_REPORT_SYSTEM_PROMPT;
 
   onProgress?.('构建对比报告提示词');
-  const userPrompt = buildCompareReportUserPrompt(data);
+  const userPrompt = buildCompareReportUserPrompt(data, language);
 
   onProgress?.('调用 Judge 模型生成对比报告');
   const startTime = Date.now();
@@ -125,7 +134,7 @@ export async function generateCompareReport(
       maxTokens: 8192,
       ...judgeParams,
     },
-    systemPrompt: COMPARE_REPORT_SYSTEM_PROMPT,
+    systemPrompt,
     userPrompt,
   });
 

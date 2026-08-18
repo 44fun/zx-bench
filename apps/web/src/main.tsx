@@ -3,16 +3,19 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { ConfigProvider, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import enUS from 'antd/locale/en_US';
 import App from './App';
 import { ThemeProvider, useTheme } from './theme';
+import { LanguageProvider, useLanguage } from './i18n';
 import './global.css';
 
 function ThemedApp() {
   const { mode } = useTheme();
+  const { lang } = useLanguage();
 
   return (
     <ConfigProvider
-      locale={zhCN}
+      locale={lang === 'en' ? enUS : zhCN}
       theme={{
         algorithm: mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {
@@ -86,7 +89,9 @@ function ThemedApp() {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider>
-      <ThemedApp />
+      <LanguageProvider>
+        <ThemedApp />
+      </LanguageProvider>
     </ThemeProvider>
   </React.StrictMode>,
 );
