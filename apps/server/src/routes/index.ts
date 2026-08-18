@@ -2027,6 +2027,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         }
       } catch { /* ignore */ }
     }
+    // 兜底：本地 GGUF（llama.cpp）API 上报的 token 偏低，用 summary 里重算后的值覆盖
+    try {
+      const _s = run.summary ? JSON.parse(run.summary) : null;
+      if (_s) {
+        reportInputTokens = Math.max(reportInputTokens, _s.totalInputTokens || 0);
+        reportOutputTokens = Math.max(reportOutputTokens, _s.totalOutputTokens || 0);
+      }
+    } catch { /* ignore */ }
     // 中位数避免极端值（超长题/超短题）歪曲均值
     const sortedSpeeds = perQuestionSpeeds.sort((a, b) => a - b);
     const avgTokensPerSecond = perQuestionSpeeds.length > 0
