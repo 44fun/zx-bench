@@ -2,8 +2,8 @@
 
 ## 1. 环境要求
 
-- Node.js ≥ 20（根 [package.json](../../package.json#L19-L22) engines 声明）
-- pnpm ≥ 8
+- Node.js ≥ 22.13（根 [package.json](../../package.json#L19-L22) engines 声明；pnpm 11 与 node:sqlite 需要）
+- pnpm ≥ 11
 - 包管理器安装：`pnpm install`（工作区 `apps/*`、`packages/*`）
 
 ## 2. 开发运行
