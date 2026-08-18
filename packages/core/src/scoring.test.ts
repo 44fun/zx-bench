@@ -103,7 +103,7 @@ describe('computeDifficultyWeightedDimAvgs (pure)', () => {
     ];
     const lookup = new Map([['a', 'hard'], ['b', 'easy']]);
     const avgs = computeDifficultyWeightedDimAvgs(results, lookup);
-    expect(avgs.get('program')).toBeCloseTo(82.5, 5);
+    expect(avgs.get('program')).toBeCloseTo(80, 5);
   });
 
   it('falls back to medium weight for unknown difficulty', () => {

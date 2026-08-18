@@ -112,7 +112,7 @@ node scripts/export-scenarios.mjs
 
 ### Three-step scoring chain
 
-1. **Per-dimension difficulty-weighted average** — each question is weighted by difficulty (`easy=1, medium=2, hard=3, adversarial=4`).
+1. **Per-dimension difficulty-weighted average** — each question is weighted by difficulty (`easy=1, medium=1.5, hard=2, adversarial=2.5`, a gentle 2.5x curve).
 
 ```
 dimensionAvg = Σ(questionScore × difficultyWeight) / Σ(difficultyWeight)

@@ -73,7 +73,7 @@ function dimensionLabelFor(dim: string, lang: 'zh' | 'en' = 'zh'): string {
 
 /**
  * 计算难度加权维度均分（DB wrapper）：批量获取题目难度 → 调用纯函数 computeDifficultyWeightedDimAvgsPure
- * 维度均分 = Σ(题目得分 × 难度权重) / Σ(难度权重)；难度越高权重越大（easy=1…adversarial=4）
+ * 维度均分 = Σ(题目得分 × 难度权重) / Σ(难度权重)；难度越高权重越大（easy=1…adversarial=2.5）
  */
 async function computeDifficultyWeightedDimAvgs(
   results: Array<{ scenarioId: string; dimension: string; totalScore: number }>,

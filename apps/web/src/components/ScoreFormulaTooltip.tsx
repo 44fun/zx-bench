@@ -19,7 +19,7 @@ interface ScoreFormulaTooltipProps {
  *   ② 维度均分 = Σ(题目得分 × 难度权重) / Σ(难度权重)
  *   ③ 综合分 = Σ(维度均分 × 维度权重) / Σ(维度权重)
  *
- * 难度权重：easy=1, medium=2, hard=3, adversarial=4（线性递增）
+ * 难度权重：easy=1, medium=1.5, hard=2, adversarial=2.5（温和递增，跨度 2.5x）
  * 维度权重与服务端 routes/index.ts DIMENSION_WEIGHTS 一致。
  */
 const FORMULA_CONTENT = (
@@ -35,13 +35,13 @@ const FORMULA_CONTENT = (
           <span>easy</span><span>权重 1</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 200 }}>
-          <span>medium</span><span>权重 2</span>
+          <span>medium</span><span>权重 1.5</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 200 }}>
-          <span>hard</span><span>权重 3</span>
+          <span>hard</span><span>权重 2</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 200 }}>
-          <span>adversarial</span><span>权重 4</span>
+          <span>adversarial</span><span>权重 2.5</span>
         </div>
       </div>
     </div>

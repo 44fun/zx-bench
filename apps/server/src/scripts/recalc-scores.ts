@@ -21,9 +21,9 @@ const DIMENSION_WEIGHTS: Record<string, number> = {
 
 const DIFFICULTY_WEIGHTS: Record<string, number> = {
   easy: 1,
-  medium: 2,
-  hard: 3,
-  adversarial: 4,
+  medium: 1.5,
+  hard: 2,
+  adversarial: 2.5,
 };
 
 async function computeDifficultyWeightedDimAvgs(

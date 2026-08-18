@@ -18,12 +18,12 @@ export const DIMENSION_WEIGHTS: Record<string, number> = {
   structured_output: 0.05, // 结构化输出
 };
 
-/** 难度权重配置（线性递增）：easy=1, medium=2, hard=3, adversarial=4 */
+/** 难度权重配置（温和递增，跨度 2.5x）：easy=1, medium=1.5, hard=2, adversarial=2.5 */
 export const DIFFICULTY_WEIGHTS: Record<string, number> = {
   easy: 1,
-  medium: 2,
-  hard: 3,
-  adversarial: 4,
+  medium: 1.5,
+  hard: 2,
+  adversarial: 2.5,
 };
 
 /**

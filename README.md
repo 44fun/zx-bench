@@ -112,7 +112,7 @@ node scripts/export-scenarios.mjs
 
 ### 三步评分链
 
-1. **维度内难度加权均分**：每道题按难度加权（`easy=1, medium=2, hard=3, adversarial=4`），高难题影响更大。
+1. **维度内难度加权均分**：每道题按难度加权（`easy=1, medium=1.5, hard=2, adversarial=2.5`，温和递增、跨度 2.5 倍），高难题影响更大但不过度放大。
 
 ```
 维度均分 = Σ(题目得分 × 难度权重) / Σ(难度权重)

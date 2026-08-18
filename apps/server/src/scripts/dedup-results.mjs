@@ -13,7 +13,7 @@ const DIMENSION_WEIGHTS = {
   safety_authority: 0.10, agent_workflow: 0.08, tool_cli_workflow: 0.07, data_extraction: 0.07,
   cli_deep_tasks: 0.07, structured_output: 0.05,
 };
-const DIFFICULTY_WEIGHTS = { easy: 1, medium: 2, hard: 3, adversarial: 4 };
+const DIFFICULTY_WEIGHTS = { easy: 1, medium: 1.5, hard: 2, adversarial: 2.5 };
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA busy_timeout = 10000');
