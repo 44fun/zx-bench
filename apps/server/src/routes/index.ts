@@ -815,6 +815,23 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { success: true };
   });
 
+  // 删除评测历史（含 fork 子运行；ScenarioResult 级联删除）
+  app.post('/api/runs/delete', async (request, reply) => {
+    const { ids } = request.body as { ids?: string[] };
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return reply.status(400).send({ success: false, error: 'ids 不能为空' });
+    }
+    // 每个 id 向下带出其子运行（parentRunId 指向它）
+    const children = await prisma.evalRun.findMany({
+      where: { parentRunId: { in: ids } },
+      select: { id: true },
+    });
+    const deleteIds = [...new Set([...ids, ...children.map((c) => c.id)])];
+    for (const did of deleteIds) cancelEvaluation(did);
+    const result = await prisma.evalRun.deleteMany({ where: { id: { in: deleteIds } } });
+    return { success: true, data: { deleted: result.count } };
+  });
+
   // 暂停评测
   app.post('/api/runs/:id/pause', async (request) => {
     const { id } = request.params as { id: string };

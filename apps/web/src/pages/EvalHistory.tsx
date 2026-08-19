@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Table, Tag, Button, Space, message, Badge } from 'antd';
+import { Table, Tag, Button, Space, message, Badge, Popconfirm } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { EyeOutlined, MonitorOutlined, PlayCircleOutlined, FileSearchOutlined } from '@ant-design/icons';
+import { EyeOutlined, MonitorOutlined, PlayCircleOutlined, FileSearchOutlined, RedoOutlined, DeleteOutlined } from '@ant-design/icons';
 import ScoreFormulaTooltip from '../components/ScoreFormulaTooltip';
 
 interface RunItem {
@@ -156,6 +156,26 @@ export default function EvalHistory() {
     }
   };
 
+  // 删除评测组
+  const handleDelete = async (group: GroupedRun) => {
+    try {
+      const res = await fetch('/api/runs/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: group.allRuns.map((r) => r.id) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        message.success(`已删除 ${data.data.deleted} 条评测记录`);
+        fetchRuns(true);
+      } else {
+        message.error(data.error || '删除失败');
+      }
+    } catch {
+      message.error('请求失败');
+    }
+  };
+
   // 子运行展开表
   const expandedRowRender = (group: GroupedRun) => (
     <Table
@@ -281,7 +301,7 @@ export default function EvalHistory() {
               ),
             },
             {
-              title: '操作', key: 'action', width: 250,
+              title: '操作', key: 'action', width: 320,
               render: (_: unknown, g: GroupedRun) => {
                 const mainId = g.mainRun.id;
                 const activeRun = g.allRuns.find((r) => r.status === 'running' || r.status === 'pending');
@@ -306,6 +326,20 @@ export default function EvalHistory() {
                     <Button icon={<FileSearchOutlined />} size="small" onClick={() => navigate(`/report/${mainId}`)}>
                       报告
                     </Button>
+                    <Button icon={<RedoOutlined />} size="small" onClick={() => navigate(`/eval/create?rerun=${mainId}`)}>
+                      重新评测
+                    </Button>
+                    <Popconfirm
+                      title="删除该评测组？"
+                      description={`将删除 ${g.allRuns.length} 条运行记录及其全部结果，不可恢复`}
+                      okText="删除"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => handleDelete(g)}
+                    >
+                      <Button icon={<DeleteOutlined />} size="small" danger>
+                        删除
+                      </Button>
+                    </Popconfirm>
                   </Space>
                 );
               },
