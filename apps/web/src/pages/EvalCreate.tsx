@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Form, Input, Select, Button, Switch, InputNumber, Slider, Radio, message, Alert, Divider, Typography, Row, Col } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../i18n';
 
 const { Text } = Typography;
@@ -34,8 +34,10 @@ export default function EvalCreate() {
   const [judgeEnabled, setJudgeEnabled] = useState(false);
   const [selectedModelReasoning, setSelectedModelReasoning] = useState(false);
   const [mode, setMode] = useState<'single' | 'batch'>('single');
+  const [rerunLoaded, setRerunLoaded] = useState(false);
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     fetch('/api/models')
@@ -43,6 +45,49 @@ export default function EvalCreate() {
       .then((res) => { if (res.success) setModels(res.data); })
       .catch(console.error);
   }, []);
+
+  // 重新评测：载入历史 run 的配置并预填表单
+  useEffect(() => {
+    const runId = searchParams.get('rerun');
+    if (!runId) return;
+    fetch(`/api/runs/${runId}`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (!res.success || !res.data) throw new Error(res.error || 'run not found');
+        const run = res.data;
+        const cfg = run.config || {};
+        const c = (cfg.constraints || {}) as Record<string, unknown>;
+        form.setFieldsValue({
+          name: run.name || undefined,
+          mode: 'single',
+          modelConfigId: run.modelConfigId,
+          judgeEnabled: !!cfg.judgeEnabled,
+          judgeModelConfigId: cfg.judgeModelConfigId || undefined,
+          dimensionIds: Array.isArray(run.dimensionFilter) ? run.dimensionFilter : [],
+          maxTokens: cfg.maxTokens,
+          temperature: cfg.temperature ?? null,
+          runsPerQuestion: cfg.runsPerQuestion,
+          escalationEnabled: !!cfg.escalationEnabled,
+          safetyCheckEnabled: cfg.safetyCheckEnabled !== false,
+          hiddenTestsEnabled: cfg.hiddenTestsEnabled !== false,
+          structuredOutputEnabled: !!cfg.structuredOutputEnabled,
+          parallelism: cfg.parallelism,
+          parallelMode: cfg.parallelMode,
+          answerFirst: !!c.answerFirst,
+          maxReasoningTokens: c.maxReasoningTokens,
+          maxAnswerTokens: c.maxAnswerTokens,
+          hardTimeLimitSec: c.hardTimeLimitMs ? Math.round((c.hardTimeLimitMs as number) / 1000) : undefined,
+          onLimit: c.onLimit,
+        });
+        setJudgeEnabled(!!cfg.judgeEnabled);
+        setRerunLoaded(true);
+        const model = models.find((m) => m.id === run.modelConfigId);
+        if (model?.reasoningModel) setSelectedModelReasoning(true);
+      })
+      .catch((err) => {
+        message.error('载入上次评测配置失败: ' + (err instanceof Error ? err.message : String(err)));
+      });
+  }, [searchParams, form, models]);
 
   const testedModels = models.filter((m) => m.modelType !== 'judge');
   const judgeModels = models.filter((m) => m.modelType === 'judge');
@@ -128,8 +173,19 @@ export default function EvalCreate() {
   return (
     <div>
       <h2 className="swiss-page-title">创建评测</h2>
+      {rerunLoaded && (
+        <Alert
+          message="已载入上次评测的完整配置"
+          description="下方表单已自动填入上次评测的名称、模型、维度与全部参数。可直接点击开始，或修改任意配置后再开始。"
+          type="info"
+          showIcon
+          closable
+          onClose={() => setRerunLoaded(false)}
+          style={{ marginBottom: 16 }}
+        />
+      )}
       <div className="swiss-card">
-        <Form layout="vertical" onFinish={onFinish}>
+        <Form form={form} layout="vertical" onFinish={onFinish}>
           {/* ===== 测试模式：单模型 / 多模型并行 ===== */}
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 13, color: 'var(--text-helper)', marginBottom: 8 }}>{t('eval.testMode')}</div>
