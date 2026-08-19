@@ -22,7 +22,7 @@ function ThemedApp() {
           colorPrimary: mode === 'dark' ? '#5b7bff' : '#002fa7',
           borderRadius: 0,
           fontFamily: '"Inter", "Helvetica Neue", "Helvetica", "Arial", "Segoe UI", system-ui, -apple-system, sans-serif, "PingFang SC", "Microsoft YaHei UI"',
-          fontSize: 14,
+          fontSize: 15,
           colorBgContainer: mode === 'dark' ? '#121212' : '#fafaf8',
           colorBgLayout: mode === 'dark' ? '#0a0a0a' : '#fafaf8',
           colorText: mode === 'dark' ? '#fafaf8' : '#0a0a0a',

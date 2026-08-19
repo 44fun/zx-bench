@@ -87,6 +87,13 @@ const dict: Record<string, { zh: string; en: string }> = {
   'report.generate': { zh: '生成 AI 报告', en: 'Generate AI report' },
   'report.regenerate': { zh: '重新生成', en: 'Regenerate' },
   'report.generating': { zh: '生成中...', en: 'Generating...' },
+  'report.title': { zh: '评测报告', en: 'Evaluation Report' },
+  'report.back': { zh: '返回', en: 'Back' },
+  'report.compositeScore': { zh: '综合分', en: 'Composite Score' },
+  'report.passRate': { zh: '通过率', en: 'Pass Rate' },
+  'report.radarTitle': { zh: '维度雷达图', en: 'Dimension Radar' },
+  'report.rankTitle': { zh: '维度排名', en: 'Dimension Ranking' },
+  'report.distTitle': { zh: '分数分布', en: 'Score Distribution' },
 };
 
 export function LanguageProvider({ children }: { children: ReactNode }) {

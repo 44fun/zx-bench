@@ -154,7 +154,7 @@ body {
   margin: 0;
   padding: 0;
   font-family: var(--sans), var(--sans-zh);
-  font-size: 15px;
+  font-size: 16px;
   background: var(--bg-body);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -270,7 +270,7 @@ body {
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: #ffffff;
   margin-right: var(--sp-4);
@@ -279,7 +279,7 @@ body {
 }
 
 .swiss-sider-logo .logo-text {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #ffffff;
@@ -288,7 +288,7 @@ body {
 
 .swiss-sider-logo .logo-text .logo-sub {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 400;
   letter-spacing: 0.2em;
   color: rgba(255, 255, 255, 0.4);
@@ -309,9 +309,9 @@ body {
   display: flex;
   align-items: center;
   gap: var(--sp-4);
-  padding: 11px var(--sp-6);
+  padding: 12px var(--sp-6);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.55);
   transition: all var(--dur-mod) var(--ease-exp);
@@ -347,14 +347,14 @@ body {
 }
 
 .swiss-menu-item .anticon {
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .swiss-sider-footer {
   padding: var(--sp-5) var(--sp-6);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   color: rgba(255, 255, 255, 0.3);
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -397,7 +397,7 @@ body {
 }
 
 .swiss-header-title {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
@@ -408,7 +408,7 @@ body {
 
 .swiss-header-title .header-accent {
   width: 4px;
-  height: 22px;
+  height: 24px;
   background: var(--accent);
   display: inline-block;
   box-shadow: 0 0 8px var(--accent-glow);
@@ -432,7 +432,7 @@ body {
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--dur-mod) var(--ease-exp);
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .theme-toggle:hover {
@@ -456,7 +456,7 @@ body {
 
 /* 页面标题 — 更大更醒目 */
 .swiss-page-title {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0 0 var(--sp-7);
@@ -469,7 +469,7 @@ body {
 .swiss-page-title::before {
   content: "";
   width: 5px;
-  height: 28px;
+  height: 30px;
   background: var(--accent);
   display: inline-block;
   box-shadow: 0 0 10px var(--accent-glow);
@@ -478,7 +478,7 @@ body {
 /* Kicker — 小标签 */
 .swiss-kicker {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -546,7 +546,7 @@ body {
 
 .swiss-kpi-card .kpi-label {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-helper);
   text-transform: uppercase;
@@ -569,7 +569,7 @@ body {
 }
 
 .swiss-kpi-card .kpi-unit {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 400;
   opacity: 0.5;
   margin-left: 4px;
@@ -618,7 +618,7 @@ body {
 }
 
 .swiss-card-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: var(--sp-5);
@@ -738,21 +738,21 @@ body {
 
 .ant-card-head-title {
   font-weight: 600 !important;
-  font-size: 15px !important;
+  font-size: 16px !important;
   letter-spacing: -0.005em !important;
 }
 
 /* Table */
 .ant-table {
   background: transparent !important;
-  font-size: 14px !important;
+  font-size: 16px !important;
 }
 
 .ant-table-thead > tr > th {
   background: var(--bg-card) !important;
   border-bottom: 2px solid var(--text-primary) !important;
   font-weight: 600 !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   text-transform: uppercase !important;
   letter-spacing: 0.1em !important;
   color: var(--text-secondary) !important;
@@ -763,7 +763,7 @@ body {
   border-bottom: 1px solid var(--border-subtle) !important;
   color: var(--text-primary) !important;
   padding: 12px 16px !important;
-  font-size: 14px !important;
+  font-size: 16px !important;
 }
 
 .ant-table-tbody > tr:hover > td {
@@ -778,7 +778,7 @@ body {
 .ant-btn {
   border-radius: 0 !important;
   font-weight: 500 !important;
-  font-size: 14px !important;
+  font-size: 16px !important;
   letter-spacing: 0.01em !important;
   transition: all var(--dur-mod) var(--ease-exp) !important;
 }
@@ -799,7 +799,7 @@ body {
 /* Tag */
 .ant-tag {
   border-radius: 0 !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   font-weight: 500 !important;
   letter-spacing: 0.02em !important;
   padding: 2px 10px !important;
@@ -814,7 +814,7 @@ body {
   background: var(--bg-card) !important;
   border-color: var(--border-subtle) !important;
   color: var(--text-primary) !important;
-  font-size: 14px !important;
+  font-size: 16px !important;
 }
 
 .ant-input:focus,
@@ -833,7 +833,7 @@ body {
 
 /* Form */
 .ant-form-item-label > label {
-  font-size: 14px !important;
+  font-size: 16px !important;
   font-weight: 500 !important;
   color: var(--text-secondary) !important;
 }
@@ -888,7 +888,7 @@ body {
 /* Empty */
 .ant-empty-description {
   color: var(--text-helper) !important;
-  font-size: 14px !important;
+  font-size: 16px !important;
 }
 
 /* Badge */
@@ -899,13 +899,13 @@ body {
 /* Popover / Tooltip */
 .ant-tooltip-inner {
   border-radius: 0 !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
 }
 
 /* Statistic */
 .ant-statistic-title {
   color: var(--text-helper) !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   text-transform: uppercase !important;
   letter-spacing: 0.1em !important;
   font-family: var(--mono) !important;
@@ -914,7 +914,7 @@ body {
 .ant-statistic-content {
   color: var(--text-primary) !important;
   font-weight: 700 !important;
-  font-size: 28px !important;
+  font-size: 30px !important;
   letter-spacing: -0.02em !important;
 }
 
@@ -930,7 +930,7 @@ body {
   border-radius: 0 !important;
   color: var(--accent) !important;
   font-family: var(--mono) !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
 }
 
 /* Typography */

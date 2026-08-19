@@ -131,11 +131,11 @@ export default function Report() {
   const [aiReport, setAiReport] = useState<string | null>(null);
   const chartRef = useRef<ReactECharts>(null);
   const { mode } = useTheme();
-  const { lang } = useLanguage();
+  const { t, lang } = useLanguage();
 
   useEffect(() => {
     if (!id) return;
-    fetch(`/api/runs/${id}/report`)
+    fetch(`/api/runs/${id}/report?lang=${lang}`)
       .then((r) => r.json())
       .then((res) => {
         if (res.success) {
@@ -204,7 +204,7 @@ export default function Report() {
       indicator: report.radarData.map((d) => ({ name: d.name, max: 100 })),
       shape: 'polygon',
       splitNumber: 5,
-      axisName: { color: cAxisLabel, fontSize: 13, fontWeight: 'bold' },
+      axisName: { color: cAxisLabel, fontSize: 14, fontWeight: 'bold' },
       axisLabel: { show: true, color: cAxisSub, fontSize: 10 },
       splitLine: { lineStyle: { color: cGrid } },
       splitArea: { areaStyle: { color: cArea } },
@@ -243,7 +243,7 @@ export default function Report() {
       })),
       type: 'bar',
       barWidth: '50%',
-      label: { show: true, position: 'top', color: cValue, fontWeight: 700, fontSize: 13 },
+      label: { show: true, position: 'top', color: cValue, fontWeight: 700, fontSize: 14 },
     }],
   };
 
@@ -255,7 +255,7 @@ export default function Report() {
     yAxis: {
       type: 'category',
       data: [...report.dimensions].reverse().map((d) => d.dimensionLabel),
-      axisLabel: { color: cAxisLabel, fontSize: 12, fontWeight: 600 },
+      axisLabel: { color: cAxisLabel, fontSize: 13, fontWeight: 600 },
     },
     series: [{
       type: 'bar',
@@ -272,9 +272,9 @@ export default function Report() {
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24, gap: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>返回</Button>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>{t('report.back')}</Button>
         <h2 className="swiss-page-title" style={{ margin: 0, flex: 1 }}>
-          评测报告 — {report.model.name}
+          {t('report.title')} — {report.model.name}
         </h2>
         <Tag color={report.runStatus === 'completed' ? 'green' : 'orange'}>{report.runStatus}</Tag>
       </div>
@@ -286,7 +286,7 @@ export default function Report() {
             <Statistic
               title={
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  综合分
+                  {t('report.compositeScore')}
                   <ScoreFormulaTooltip placement="bottom" />
                 </span>
               }
@@ -300,7 +300,7 @@ export default function Report() {
         <Col xs={12} sm={6} md={4}>
           <Card className="swiss-card" bodyStyle={{ padding: 20 }}>
             <Statistic
-              title="通过率"
+              title={t('report.passRate')}
               value={report.passRate}
               suffix="%"
               valueStyle={{ color: report.passRate >= 70 ? '#52c41a' : '#faad14', fontSize: 32, fontWeight: 700 }}
@@ -401,13 +401,13 @@ export default function Report() {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={12}>
           <Card className="swiss-card" style={{ height: '100%' }}>
-            <div className="swiss-card-title">维度雷达图</div>
+            <div className="swiss-card-title">{t('report.radarTitle')}</div>
             <ReactECharts ref={chartRef} option={radarOption} style={{ height: 380 }} />
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card className="swiss-card" style={{ height: '100%' }}>
-            <div className="swiss-card-title">维度排名</div>
+            <div className="swiss-card-title">{t('report.rankTitle')}</div>
             <ReactECharts option={rankOption} style={{ height: 380 }} />
           </Card>
         </Col>
@@ -415,7 +415,7 @@ export default function Report() {
 
       {/* Score Distribution */}
       <Card className="swiss-card" style={{ marginBottom: 16 }}>
-        <div className="swiss-card-title">分数分布</div>
+        <div className="swiss-card-title">{t('report.distTitle')}</div>
         <ReactECharts option={distOption} style={{ height: 260 }} />
       </Card>
 

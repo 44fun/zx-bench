@@ -1800,6 +1800,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ===== 评测报告 =====
   app.get('/api/runs/:id/report', async (request, reply) => {
     const { id } = request.params as { id: string };
+    const lang = (request.query as { lang?: string }).lang === 'en' ? 'en' : 'zh';
     const run = await prisma.evalRun.findUnique({
       where: { id },
       include: { modelConfig: true },
@@ -1905,7 +1906,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
       return {
         dimension: dim,
-        dimensionLabel: dimensionLabel(dim),
+        dimensionLabel: dimensionLabelFor(dim, lang),
         count: d.scores.length,
         averageScore: avg,
         maxScore: max,
