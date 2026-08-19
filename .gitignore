@@ -1,0 +1,54 @@
+# ===== 依赖 =====
+node_modules/
+.pnpm-store/
+
+# ===== 构建产物 =====
+dist/
+dist_bak_*/
+*.tsbuildinfo
+.turbo/
+
+# ===== 环境变量（密钥不入库）=====
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ===== 数据库（本地评测数据不入库）=====
+apps/data/
+*.db
+*.db-wal
+*.db-shm
+*.db.bak-*
+*.sqlite
+*.sqlite3
+
+# ===== 评测产物 =====
+data/evaluations/
+
+# ===== 日志 =====
+*.log
+logs/
+server-*.log
+server-*.out
+server-*.err
+
+# ===== 临时/scratch 文件 =====
+tmp-*
+.tmp-*
+*.tmp
+nul
+
+# ===== 生成的分析产物 =====
+config-gaps.json
+scenario-health.json
+
+# ===== Agent / 本地工具 =====
+.workbuddy/
+
+# ===== 编辑器 / OS =====
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+coverage/

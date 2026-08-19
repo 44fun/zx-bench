@@ -1,0 +1,1026 @@
+/* ================================================================
+   智秀大模型评测 — Swiss International Style + IKB Klein Blue
+   全局主题系统 (Light / Dark) — V2 Enhanced
+   ================================================================ */
+
+/* ===== 亮色主题 (默认) ===== */
+:root {
+  /* 主色板 */
+  --paper: #fafaf8;
+  --paper-rgb: 250, 250, 248;
+  --ink: #0a0a0a;
+  --ink-rgb: 10, 10, 10;
+  --grey-1: #f0f0ee;
+  --grey-2: #d4d4d2;
+  --grey-3: #737373;
+  --accent: #002fa7;
+  --accent-rgb: 0, 47, 167;
+  --accent-on: #ffffff;
+  --accent-bright: #5b7bff;
+  --accent-glow: rgba(0, 47, 167, 0.12);
+
+  /* 语义色 */
+  --success: #0a7c42;
+  --warning: #b8860b;
+  --danger: #c41e3a;
+  --info: var(--accent);
+
+  /* 文本角色 */
+  --text-primary: #0a0a0a;
+  --text-secondary: #525252;
+  --text-helper: #737373;
+  --text-placeholder: #a3a3a3;
+  --text-on-color: #ffffff;
+  --text-inverse: #fafaf8;
+
+  /* 边框 */
+  --border-subtle: #e0e0e0;
+  --border-strong: #a3a3a3;
+
+  /* 布局 */
+  --sidebar-width: 240px;
+  --header-height: 60px;
+  --content-padding: 28px;
+
+  /* 字体 */
+  --sans: "Inter", "Helvetica Neue", "Helvetica", "Arial", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --sans-zh: "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --mono: "JetBrains Mono", "IBM Plex Mono", "SF Mono", "Cascadia Code", "Consolas", "Courier New", monospace;
+
+  /* 间距模数 (8px 基线) */
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+  --sp-9: 48px;
+
+  /* Motion tokens (Carbon Design) */
+  --ease-prod: cubic-bezier(.2, 0, .38, .9);
+  --ease-exp: cubic-bezier(.4, .14, .3, 1);
+  --ease-entry: cubic-bezier(0, 0, .3, 1);
+  --dur-fast: .15s;
+  --dur-mod: .24s;
+  --dur-slow: .4s;
+
+  /* 背景 */
+  --bg-body: var(--paper);
+  --bg-sider: #0a0a0a;
+  --bg-header: var(--paper);
+  --bg-content: var(--grey-1);
+  --bg-card: var(--paper);
+  --bg-hover: rgba(var(--accent-rgb), 0.06);
+  --bg-active: rgba(var(--accent-rgb), 0.12);
+
+  /* 阴影 */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 4px 16px rgba(var(--accent-rgb), 0.12);
+  --border-card: 1px solid var(--border-subtle);
+
+  /* 莫兰迪色板 — AI 报告渲染专用（提饱和、提对比，仍保持莫兰迪灰调） */
+  --morandi-heading: #3d6b4f;
+  --morandi-accent: #9a5b3a;
+  --morandi-strong: #b0472a;
+  --morandi-table-header: #4f7d5f;
+  --morandi-gold: #c08a2d;
+  --morandi-link: #2f6b8a;
+  --morandi-code-bg: rgba(154, 91, 58, 0.14);
+}
+
+/* ===== 暗色主题 — 莫兰迪深蓝 ===== */
+[data-theme="dark"] {
+  /* 莫兰迪色板：低饱和、灰调、深蓝底 */
+  --paper: #1a1e2a;
+  --paper-rgb: 26, 30, 42;
+  --ink: #d4d0ca;
+  --ink-rgb: 212, 208, 202;
+  --grey-1: #232838;
+  --grey-2: #2e3344;
+  --grey-3: #8a8d96;
+  --accent: #6b8aad;
+  --accent-rgb: 107, 138, 173;
+  --accent-on: #ffffff;
+  --accent-bright: #8aa6c4;
+  --accent-glow: rgba(107, 138, 173, 0.15);
+
+  /* 语义色 — 莫兰迪化 */
+  --success: #7ba888;
+  --warning: #c4a96a;
+  --danger: #c47b7b;
+
+  /* 文本 — 暖灰调 */
+  --text-primary: #d4d0ca;
+  --text-secondary: #a5a29c;
+  --text-helper: #9c9a94;
+  --text-placeholder: #555359;
+  --text-on-color: #ffffff;
+  --text-inverse: #1a1e2a;
+
+  /* 边框 */
+  --border-subtle: #2e3344;
+  --border-strong: #3e4458;
+
+  /* 背景 */
+  --bg-body: #1a1e2a;
+  --bg-sider: #141821;
+  --bg-header: #1e2230;
+  --bg-content: #1a1e2a;
+  --bg-card: #232838;
+  --bg-hover: rgba(var(--accent-rgb), 0.12);
+  --bg-active: rgba(var(--accent-rgb), 0.20);
+
+  /* 阴影 */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --shadow-card-hover: 0 4px 16px rgba(var(--accent-rgb), 0.15);
+  --border-card: 1px solid var(--border-subtle);
+
+  /* 莫兰迪色板 — 暗色模式：提高明度与饱和保证可读性 */
+  --morandi-heading: #7ec78f;
+  --morandi-accent: #e0a46a;
+  --morandi-strong: #f0a05e;
+  --morandi-table-header: #3f6b52;
+  --morandi-gold: #e5c05a;
+  --morandi-link: #7fb8e0;
+  --morandi-code-bg: rgba(224, 164, 106, 0.16);
+}
+
+/* ===== 基础重置 ===== */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--sans), var(--sans-zh);
+  font-size: 15px;
+  background: var(--bg-body);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+  transition: background 0.4s var(--ease-exp), color 0.4s var(--ease-exp);
+}
+
+/* ===== 动态背景 Canvas ===== */
+.swiss-bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: multiply;
+}
+
+[data-theme="dark"] .swiss-bg-canvas {
+  mix-blend-mode: screen;
+  opacity: 0.18;
+}
+
+/* ===== 滚动条 ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* ================================================================
+   Swiss Layout
+   ================================================================ */
+.swiss-layout {
+  min-height: 100vh;
+  display: flex;
+  position: relative;
+  z-index: 1;
+}
+
+/* ===== Sidebar ===== */
+.swiss-sider {
+  width: var(--sidebar-width);
+  background: var(--bg-sider);
+  color: var(--text-inverse);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 100;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+/* 侧边栏顶部渐变光效 */
+.swiss-sider::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.15) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 侧边栏底部点阵装饰 */
+.swiss-sider::after {
+  content: "";
+  position: absolute;
+  bottom: 60px;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1.5px);
+  background-size: 12px 12px;
+  pointer-events: none;
+  z-index: 0;
+  mask-image: linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0));
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0));
+}
+
+.swiss-sider-logo {
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  z-index: 1;
+}
+
+.swiss-sider-logo .logo-mark {
+  width: 32px;
+  height: 32px;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-right: var(--sp-4);
+  letter-spacing: -0.02em;
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.5);
+}
+
+.swiss-sider-logo .logo-text {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  font-family: var(--sans), var(--sans-zh);
+}
+
+.swiss-sider-logo .logo-text .logo-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  display: block;
+  margin-top: 2px;
+}
+
+.swiss-sider-menu {
+  flex: 1;
+  padding: var(--sp-5) 0;
+  overflow-y: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.swiss-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 11px var(--sp-6);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  transition: all var(--dur-mod) var(--ease-exp);
+  border-left: 3px solid transparent;
+  letter-spacing: 0.01em;
+  position: relative;
+}
+
+.swiss-menu-item:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+  padding-left: calc(var(--sp-6) + 4px);
+}
+
+.swiss-menu-item.active {
+  color: #ffffff;
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.25) 0%, rgba(var(--accent-rgb), 0.05) 100%);
+  border-left-color: var(--accent-bright);
+  font-weight: 600;
+}
+
+.swiss-menu-item.active::after {
+  content: "";
+  position: absolute;
+  right: var(--sp-5);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  background: var(--accent-bright);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--accent-bright);
+}
+
+.swiss-menu-item .anticon {
+  font-size: 17px;
+}
+
+.swiss-sider-footer {
+  padding: var(--sp-5) var(--sp-6);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  position: relative;
+  z-index: 1;
+}
+
+.swiss-sider-footer .footer-accent {
+  color: var(--accent-bright);
+  font-weight: 600;
+}
+
+/* ===== Main Area ===== */
+.swiss-main {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ===== Header ===== */
+.swiss-header {
+  height: var(--header-height);
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-7);
+  position: sticky;
+  top: 0;
+  z-index: 99;
+  backdrop-filter: blur(12px);
+  transition: background 0.4s var(--ease-exp), border-color 0.4s var(--ease-exp);
+}
+
+[data-theme="dark"] .swiss-header {
+  background: rgba(30, 34, 48, 0.85);
+}
+
+.swiss-header-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.swiss-header-title .header-accent {
+  width: 4px;
+  height: 22px;
+  background: var(--accent);
+  display: inline-block;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.swiss-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+/* 主题切换按钮 */
+.theme-toggle {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--dur-mod) var(--ease-exp);
+  font-size: 17px;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+/* ===== Content ===== */
+.swiss-content {
+  flex: 1;
+  padding: var(--sp-7);
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+/* ================================================================
+   Swiss 页面元素
+   ================================================================ */
+
+/* 页面标题 — 更大更醒目 */
+.swiss-page-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 var(--sp-7);
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.swiss-page-title::before {
+  content: "";
+  width: 5px;
+  height: 28px;
+  background: var(--accent);
+  display: inline-block;
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* Kicker — 小标签 */
+.swiss-kicker {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: var(--sp-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.swiss-kicker::before {
+  content: "";
+  width: 20px;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+/* ================================================================
+   Swiss KPI 卡片 — 增强版
+   ================================================================ */
+.swiss-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-7);
+}
+
+.swiss-kpi-card {
+  background: var(--bg-card);
+  border: var(--border-card);
+  padding: var(--sp-6);
+  position: relative;
+  transition: all var(--dur-mod) var(--ease-exp);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+/* 卡片顶部 accent 线 */
+.swiss-kpi-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--border-subtle);
+  transition: background var(--dur-mod) var(--ease-exp);
+}
+
+.swiss-kpi-card.accent::before {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.swiss-kpi-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+}
+
+.swiss-kpi-card:hover::before {
+  background: var(--accent);
+}
+
+.swiss-kpi-card .kpi-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-helper);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: var(--sp-4);
+}
+
+.swiss-kpi-card .kpi-value {
+  font-size: 42px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--sans), var(--sans-zh);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-feature-settings: "tnum";
+}
+
+.swiss-kpi-card .kpi-value.accent {
+  color: var(--accent);
+}
+
+.swiss-kpi-card .kpi-unit {
+  font-size: 16px;
+  font-weight: 400;
+  opacity: 0.5;
+  margin-left: 4px;
+}
+
+.swiss-kpi-card .kpi-icon {
+  position: absolute;
+  top: var(--sp-5);
+  right: var(--sp-5);
+  font-size: 22px;
+  color: var(--border-strong);
+  transition: color var(--dur-mod) var(--ease-exp);
+}
+
+.swiss-kpi-card:hover .kpi-icon {
+  color: var(--accent);
+}
+
+/* 卡片右下角点阵装饰 */
+.swiss-kpi-card::after {
+  content: "";
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 40px;
+  height: 40px;
+  background-image: radial-gradient(var(--border-subtle) 1px, transparent 1.5px);
+  background-size: 8px 8px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ================================================================
+   Swiss Card — 通用卡片
+   ================================================================ */
+.swiss-card {
+  background: var(--bg-card);
+  border: var(--border-card);
+  padding: var(--sp-6);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--dur-mod) var(--ease-exp);
+}
+
+.swiss-card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+.swiss-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--sp-5);
+  padding-bottom: var(--sp-4);
+  border-bottom: 2px solid var(--text-primary);
+  letter-spacing: -0.005em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+[data-theme="dark"] .swiss-card-title {
+  border-bottom-color: var(--text-primary);
+}
+
+/* ================================================================
+   点阵装饰类 (from PPT)
+   ================================================================ */
+.dot-mat {
+  --d: 14px;
+  background-image: radial-gradient(currentColor 1.4px, transparent 1.6px);
+  background-size: var(--d) var(--d);
+  background-position: 0 0;
+  opacity: 0.5;
+}
+.dot-mat.lg { --d: 22px; }
+.dot-mat.xl { --d: 34px; }
+.dot-mat.dense { --d: 9px; opacity: 0.62; }
+
+.ring-mat {
+  --d: 18px;
+  background-image: radial-gradient(circle at 50% 50%, transparent 2px, currentColor 2px, currentColor 2.6px, transparent 2.7px);
+  background-size: var(--d) var(--d);
+  opacity: 0.55;
+}
+
+/* ================================================================
+   动画系统
+   ================================================================ */
+
+/* 页面淡入上移 */
+@keyframes swiss-fade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.swiss-fade-in {
+  animation: swiss-fade-in 0.5s var(--ease-exp);
+}
+
+/* KPI 数字弹入 */
+@keyframes swiss-kpi-pop {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.swiss-kpi-card .kpi-value {
+  animation: swiss-kpi-pop 0.6s var(--ease-exp) backwards;
+}
+
+.swiss-kpi-card:nth-child(1) .kpi-value { animation-delay: 0.05s; }
+.swiss-kpi-card:nth-child(2) .kpi-value { animation-delay: 0.1s; }
+.swiss-kpi-card:nth-child(3) .kpi-value { animation-delay: 0.15s; }
+.swiss-kpi-card:nth-child(4) .kpi-value { animation-delay: 0.2s; }
+
+/* 卡片依次出现 */
+@keyframes swiss-card-enter {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.swiss-card, .swiss-kpi-card {
+  animation: swiss-card-enter 0.5s var(--ease-exp) backwards;
+}
+
+.swiss-kpi-grid .swiss-kpi-card:nth-child(1) { animation-delay: 0s; }
+.swiss-kpi-grid .swiss-kpi-card:nth-child(2) { animation-delay: 0.06s; }
+.swiss-kpi-grid .swiss-kpi-card:nth-child(3) { animation-delay: 0.12s; }
+.swiss-kpi-grid .swiss-kpi-card:nth-child(4) { animation-delay: 0.18s; }
+
+/* 脉冲发光 */
+@keyframes swiss-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50% { box-shadow: 0 0 0 6px transparent; }
+}
+
+.swiss-pulse {
+  animation: swiss-pulse 2s infinite;
+}
+
+/* 加载呼吸 */
+@keyframes swiss-breathe {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.swiss-breathe {
+  animation: swiss-breathe 1.8s var(--ease-exp) infinite;
+}
+
+/* ================================================================
+   Antd 组件覆盖
+   ================================================================ */
+
+/* Card */
+.ant-card {
+  background: var(--bg-card) !important;
+  border: var(--border-card) !important;
+  border-radius: 0 !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+.ant-card-head {
+  border-bottom: 1px solid var(--border-subtle) !important;
+  min-height: 48px !important;
+}
+
+.ant-card-head-title {
+  font-weight: 600 !important;
+  font-size: 15px !important;
+  letter-spacing: -0.005em !important;
+}
+
+/* Table */
+.ant-table {
+  background: transparent !important;
+  font-size: 14px !important;
+}
+
+.ant-table-thead > tr > th {
+  background: var(--bg-card) !important;
+  border-bottom: 2px solid var(--text-primary) !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  color: var(--text-secondary) !important;
+  padding: 14px 16px !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+  padding: 12px 16px !important;
+  font-size: 14px !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--bg-hover) !important;
+}
+
+.ant-table-tbody > tr.ant-table-row-selected > td {
+  background: var(--bg-active) !important;
+}
+
+/* Button */
+.ant-btn {
+  border-radius: 0 !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  letter-spacing: 0.01em !important;
+  transition: all var(--dur-mod) var(--ease-exp) !important;
+}
+
+.ant-btn-primary {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.3) !important;
+}
+
+.ant-btn-primary:hover {
+  background: var(--accent-bright) !important;
+  border-color: var(--accent-bright) !important;
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.4) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Tag */
+.ant-tag {
+  border-radius: 0 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.02em !important;
+  padding: 2px 10px !important;
+}
+
+/* Input */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-select-selector {
+  border-radius: 0 !important;
+  background: var(--bg-card) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+  font-size: 14px !important;
+}
+
+.ant-input:focus,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused,
+.ant-input-number-focused,
+.ant-select-focused .ant-select-selector {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.12) !important;
+}
+
+.ant-input::placeholder,
+.ant-select-selection-placeholder {
+  color: var(--text-placeholder) !important;
+}
+
+/* Form */
+.ant-form-item-label > label {
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+}
+
+/* Modal */
+.ant-modal-content {
+  border-radius: 0 !important;
+  background: var(--bg-card) !important;
+}
+
+.ant-modal-header {
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+/* Progress */
+.ant-progress-bg {
+  background: var(--accent) !important;
+}
+
+/* Switch */
+.ant-switch-checked {
+  background: var(--accent) !important;
+}
+
+/* Menu */
+.ant-menu {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Alert */
+.ant-alert {
+  border-radius: 0 !important;
+}
+
+/* Descriptions */
+.ant-descriptions-view {
+  border-radius: 0 !important;
+}
+
+/* Collapse */
+.ant-collapse {
+  border-radius: 0 !important;
+  border-color: var(--border-subtle) !important;
+}
+
+/* Spin */
+.ant-spin-dot-item {
+  background: var(--accent) !important;
+}
+
+/* Empty */
+.ant-empty-description {
+  color: var(--text-helper) !important;
+  font-size: 14px !important;
+}
+
+/* Badge */
+.ant-badge-status-processing .ant-badge-status-dot {
+  background: var(--accent) !important;
+}
+
+/* Popover / Tooltip */
+.ant-tooltip-inner {
+  border-radius: 0 !important;
+  font-size: 13px !important;
+}
+
+/* Statistic */
+.ant-statistic-title {
+  color: var(--text-helper) !important;
+  font-size: 12px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  font-family: var(--mono) !important;
+}
+
+.ant-statistic-content {
+  color: var(--text-primary) !important;
+  font-weight: 700 !important;
+  font-size: 28px !important;
+  letter-spacing: -0.02em !important;
+}
+
+/* Divider */
+.ant-divider {
+  border-color: var(--border-subtle) !important;
+}
+
+/* Code */
+.ant-typography code {
+  background: var(--grey-1) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: 0 !important;
+  color: var(--accent) !important;
+  font-family: var(--mono) !important;
+  font-size: 13px !important;
+}
+
+/* Typography */
+.ant-typography {
+  font-family: var(--sans), var(--sans-zh) !important;
+}
+
+.ant-typography h4 {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+}
+
+/* Slider */
+.ant-slider-track {
+  background: var(--accent) !important;
+}
+
+.ant-slider-handle::after {
+  border-color: var(--accent) !important;
+}
+
+/* ===== 暗色主题额外覆盖 ===== */
+[data-theme="dark"] .ant-table-thead > tr > th {
+  border-bottom-color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .ant-table-tbody > tr > td {
+  background: transparent !important;
+}
+
+[data-theme="dark"] .ant-card-head {
+  border-bottom-color: var(--border-subtle) !important;
+}
+
+/* ================================================================
+   工具类
+   ================================================================ */
+.text-accent { color: var(--accent) !important; }
+.text-secondary { color: var(--text-secondary) !important; }
+.text-helper { color: var(--text-helper) !important; }
+.text-success { color: var(--success) !important; }
+.text-danger { color: var(--danger) !important; }
+.font-mono { font-family: var(--mono) !important; }
+.bg-accent { background: var(--accent) !important; color: var(--accent-on) !important; }
+
+.swiss-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--sp-6) 0;
+  border: none;
+}
+
+.swiss-accent-bar {
+  height: 3px;
+  background: var(--accent);
+  width: 100%;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* accent 文字标记 */
+.swiss-mark {
+  background: var(--accent);
+  color: var(--accent-on);
+  padding: 0 6px;
+  font-weight: 600;
+}
+
+/* accent 下划线 */
+.swiss-underline-accent {
+  background-image: linear-gradient(to bottom, transparent 70%, var(--accent) 70%, var(--accent) 96%, transparent 96%);
+  padding: 0 2px;
+}
+
+/* ================================================================
+   响应式
+   ================================================================ */
+@media (max-width: 768px) {
+  .swiss-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .swiss-sider {
+    display: none;
+  }
+  .swiss-main {
+    margin-left: 0;
+  }
+  .swiss-content {
+    padding: var(--sp-5);
+  }
+  .swiss-page-title {
+    font-size: 22px;
+  }
+}
