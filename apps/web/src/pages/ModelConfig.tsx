@@ -98,6 +98,21 @@ export default function ModelConfigPage() {
     fetchModels();
   };
 
+  const onToggleType = async (model: ModelItem, target: 'tested' | 'judge') => {
+    const res = await fetch('/api/models/' + model.id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modelType: target }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      message.success(target === 'judge' ? `「${showName(model)}」已设为 AI Judge` : `「${showName(model)}」已设为被测模型`);
+      fetchModels();
+    } else {
+      message.error(data.error || '转换失败', 8);
+    }
+  };
+
   const openEdit = (model: ModelItem) => {
     setEditing(model);
     editForm.setFieldsValue({
@@ -144,17 +159,23 @@ export default function ModelConfigPage() {
   const idColumn = { title: '模型 ID', dataIndex: 'name', key: 'name' };
   const providerColumn = { title: 'Provider', dataIndex: 'provider', key: 'provider' };
   const baseUrlColumn = { title: 'Base URL', dataIndex: 'baseUrl', key: 'baseUrl' };
-  const actionColumn = {
+  const actionColumn = (type: 'tested' | 'judge') => ({
     title: '操作', key: 'action',
     render: (_: unknown, r: ModelItem) => (
       <Space>
         <Button size="small" onClick={() => openEdit(r)}>编辑</Button>
+        <Popconfirm
+          title={type === 'tested' ? `将「${showName(r)}」转为 AI Judge？` : `将「${showName(r)}」转为被测模型？`}
+          onConfirm={() => onToggleType(r, type === 'tested' ? 'judge' : 'tested')}
+        >
+          <Button size="small">{type === 'tested' ? '设为 AI Judge' : '设为被测'}</Button>
+        </Popconfirm>
         <Popconfirm title="确认删除？" onConfirm={() => onDelete(r.id)}>
           <Button danger size="small">删除</Button>
         </Popconfirm>
       </Space>
     ),
-  };
+  });
 
   return (
     <div>
@@ -232,7 +253,7 @@ export default function ModelConfigPage() {
                 </Space>
               ),
             },
-            actionColumn,
+            actionColumn('tested'),
           ]}
         />
       </div>
@@ -248,7 +269,7 @@ export default function ModelConfigPage() {
             idColumn,
             providerColumn,
             baseUrlColumn,
-            actionColumn,
+            actionColumn('judge'),
           ]}
         />
       </div>

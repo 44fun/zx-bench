@@ -17,7 +17,6 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from './theme';
 import { useLanguage } from './i18n';
-import AnimatedBackground from './components/AnimatedBackground';
 import Dashboard from './pages/Dashboard';
 import EvalCreate from './pages/EvalCreate';
 import EvalHistory from './pages/EvalHistory';
@@ -101,8 +100,6 @@ export default function App() {
 
   return (
     <div className="swiss-layout">
-      <AnimatedBackground />
-
       {/* ===== Swiss Sidebar ===== */}
       <aside className="swiss-sider">
         <div className="swiss-sider-logo">

@@ -446,7 +446,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // 只更新传入的字段
       const data: {
         name?: string; displayName?: string | null; provider?: string;
-        baseUrl?: string; apiKey?: string | null; reasoningModel?: boolean;
+        baseUrl?: string; apiKey?: string | null; reasoningModel?: boolean; modelType?: string;
       } = {};
       if (body.displayName !== undefined) data.displayName = body.displayName || null;
       if (body.name !== undefined && body.name) data.name = body.name;
@@ -454,6 +454,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (body.baseUrl !== undefined && body.baseUrl) data.baseUrl = body.baseUrl;
       if (body.apiKey !== undefined) data.apiKey = body.apiKey ? encryptApiKey(body.apiKey) : null;
       if (body.reasoningModel !== undefined) data.reasoningModel = body.reasoningModel;
+      if (body.modelType !== undefined) {
+        if (body.modelType !== 'tested' && body.modelType !== 'judge') {
+          return reply.status(400).send({ success: false, error: 'modelType 只能是 tested 或 judge' });
+        }
+        data.modelType = body.modelType;
+      }
       if (Object.keys(data).length === 0) {
         return reply.status(400).send({ success: false, error: '没有可更新的字段' });
       }

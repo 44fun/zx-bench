@@ -12,7 +12,7 @@ const SCENARIOS_DIR = path.join(ROOT, 'data/scenarios');
 const BASE = process.env.BASE_URL || 'http://localhost:3001';
 const RESET = process.argv.includes('--reset');
 
-const files = fs.readdirSync(SCENARIOS_DIR).filter((f) => f.endsWith('.json'));
+const files = fs.readdirSync(SCENARIOS_DIR).filter((f) => f.endsWith('.json') && !f.endsWith('-meta.json'));
 if (files.length === 0) {
   console.error('data/scenarios 下没有 json 题目文件');
   process.exit(1);
