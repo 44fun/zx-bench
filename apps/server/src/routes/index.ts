@@ -268,13 +268,15 @@ async function checkPause(runId: string): Promise<'continue' | 'cancelled'> {
   const stateBefore = ctrl.state as string;
   if (stateBefore === 'cancelled') return 'cancelled';
   if (stateBefore === 'paused') {
-    // 等待 resume 信号
-    ctrl.resumePromise = new Promise<void>((resolve) => {
-      ctrl.resumeResolve = resolve;
-    });
-    await ctrl.resumePromise;
-    ctrl.resumePromise = null;
-    ctrl.resumeResolve = null;
+    // 轮询等待恢复信号：多个 worker 并发挂起时会覆盖同一个 resumeResolve，
+    // 导致 resume 只能唤醒最后一个 worker、其余 worker 永久挂起（Promise.all 永不结束）。
+    // 改为轮询 state，所有 worker 都能被唤醒。
+    while (true) {
+      const cur = evalControllers.get(runId);
+      if (!cur || cur.state === 'cancelled') return 'cancelled';
+      if (cur.state === 'running') break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
   }
   // Re-read state after potentially being resumed
   return ctrl.state === 'cancelled' ? 'cancelled' : 'continue';
