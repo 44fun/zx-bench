@@ -784,16 +784,27 @@ body {
 }
 
 .ant-btn-primary {
+  color: var(--accent-on) !important;
   background: var(--accent) !important;
   border-color: var(--accent) !important;
   box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.3) !important;
 }
 
 .ant-btn-primary:hover {
+  color: var(--accent-on) !important;
   background: var(--accent-bright) !important;
   border-color: var(--accent-bright) !important;
   box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.4) !important;
   transform: translateY(-1px) !important;
+}
+
+.ant-btn-primary:disabled,
+.ant-btn-primary:disabled:hover {
+  color: var(--text-placeholder) !important;
+  background: var(--bg-hover) !important;
+  border-color: var(--border-subtle) !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 /* Tag */
