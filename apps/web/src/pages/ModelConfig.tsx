@@ -68,15 +68,23 @@ export default function ModelConfigPage() {
     }
   };
 
-  const onTestConnection = async () => {
+  const onTestConnection = async (formInstance = form, extra?: { provider?: string; modelId?: string }) => {
     try {
-      const values = await form.validateFields(['name', 'baseUrl']);
+      const values = await formInstance.validateFields(['name', 'baseUrl']);
       setTesting(true);
       message.loading({ content: '正在' + t('model.testConn') + '…', key: 'conn-test', duration: 0 });
+      const fields = formInstance.getFieldsValue();
       const res = await fetch('/api/models/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form.getFieldsValue(), name: values.name, baseUrl: values.baseUrl }),
+        body: JSON.stringify({
+          name: values.name,
+          baseUrl: values.baseUrl,
+          provider: extra?.provider || fields.provider || 'openai',
+          apiKey: fields.apiKey,
+          reasoningModel: fields.reasoningModel,
+          modelId: extra?.modelId,
+        }),
       });
       const data = await res.json();
       message.destroy('conn-test');
@@ -225,7 +233,7 @@ export default function ModelConfigPage() {
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit" loading={loading}>{modelType === 'judge' ? '测试并添加' : '添加模型'}</Button>
-              <Button onClick={onTestConnection} loading={testing}>{t('model.testConn')}</Button>
+              <Button onClick={() => onTestConnection()} loading={testing}>{t('model.testConn')}</Button>
             </Space>
           </Form.Item>
         </Form>
@@ -295,6 +303,15 @@ export default function ModelConfigPage() {
           </Form.Item>
           <Form.Item label={t('model.reasoning')} name="reasoningModel" valuePropName="checked">
             <Switch />
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Button
+              onClick={() => onTestConnection(editForm, { provider: editing?.provider, modelId: editing?.id })}
+              loading={testing}
+              block
+            >
+              {t('model.testConn')}
+            </Button>
           </Form.Item>
         </Form>
       </Modal>

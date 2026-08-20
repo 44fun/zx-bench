@@ -45,6 +45,7 @@ scenario-health.json
 
 # ===== Agent / 本地工具 =====
 .workbuddy/
+AGENTS.md
 
 # ===== 编辑器 / OS =====
 .DS_Store

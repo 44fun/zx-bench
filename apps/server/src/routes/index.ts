@@ -309,18 +309,116 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ===== 模型配置 =====
-  /** 连通性测试：用小请求验证模型端点可用（模型 ID/密钥/网络任一出错即失败） */
-  async function testModelConnectivity(cfg: { name: string; provider: string; baseUrl: string; apiKey?: string; reasoningModel?: boolean }): Promise<{ ok: boolean; latencyMs?: number; error?: string; requiresTemperatureOne?: boolean }> {
+  const CONNECT_TEST_TIMEOUT_MS = 45_000;
+
+  /** 单次流式探测：发 stream 请求，收到首个有效 data chunk（首 token / 首个 reasoning_content）即判定连通 */
+  async function probeModelStreamOnce(cfg: { name: string; baseUrl: string; apiKey?: string }, temperature: number): Promise<number> {
     const start = Date.now();
-    const baseConfig = {
-      id: 'connectivity-test',
-      name: cfg.name,
-      provider: cfg.provider,
-      baseUrl: cfg.baseUrl,
-      apiKey: cfg.apiKey,
-      defaultParams: {},
-      reasoningModel: cfg.reasoningModel === true,
-    };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(new Error(`连接测试超时（${CONNECT_TEST_TIMEOUT_MS / 1000}s）`)), CONNECT_TEST_TIMEOUT_MS);
+    try {
+      const url = `${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
+      const body = {
+        model: cfg.name,
+        messages: [{ role: 'user', content: '请回复: OK' }],
+        max_tokens: 16,
+        temperature,
+        stream: true,
+      };
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        throw new Error(`Model API error ${resp.status}: ${errorText}`);
+      }
+      if (!resp.body) {
+        throw new Error('Streaming response has no body');
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buffer.indexOf('\n')) !== -1) {
+            const line = buffer.slice(0, idx).trim();
+            buffer = buffer.slice(idx + 1);
+            if (!line.startsWith('data:')) continue;
+            const dataStr = line.slice(5).trim();
+            if (dataStr && dataStr !== '[DONE]') {
+              return Date.now() - start; // 收到首个 chunk → 连通，立即结束
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      throw new Error('Stream ended before any content chunk');
+    } finally {
+      clearTimeout(timeoutId);
+      controller.abort();
+    }
+  }
+
+  /** 快速路径：GET /models 验证端点 + API Key + 模型 ID 是否存在（OpenAI 兼容标准接口，毫秒级）。
+      返回 'unsupported' 表示平台不提供该接口，调用方应回退到流式 chat 探测 */
+  async function probeModelsEndpoint(cfg: { name: string; baseUrl: string; apiKey?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string; requiresTemperatureOne?: boolean } | 'unsupported'> {
+    const start = Date.now();
+    try {
+      const url = `${cfg.baseUrl.replace(/\/$/, '')}/models`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
+      const resp = await fetch(url, { headers, signal: AbortSignal.timeout(CONNECT_TEST_TIMEOUT_MS) });
+      // 平台不提供 /models → 交给流式 chat 探测兜底
+      if (resp.status === 404 || resp.status === 405 || resp.status === 501) {
+        return 'unsupported';
+      }
+      const text = await resp.text();
+      if (!resp.ok) {
+        const msg = `Model API error ${resp.status}: ${text.slice(0, 200)}`;
+        if (resp.status === 401 || resp.status === 403) {
+          return { ok: false, error: `连接失败：API Key 无效或无权限（${msg.slice(0, 120)}）` };
+        }
+        return { ok: false, error: `连接失败: ${msg.slice(0, 300)}` };
+      }
+      // 校验模型 ID 是否在列表中
+      let found = true;
+      try {
+        const data = JSON.parse(text) as { data?: Array<{ id?: string }> };
+        if (Array.isArray(data.data)) {
+          found = data.data.some((x) => x.id === cfg.name);
+        }
+      } catch {
+        // 非 JSON 响应无法核对列表，端点 + key 已验证即视为通过
+      }
+      if (!found) {
+        return { ok: false, error: `连接失败：模型 ID “${cfg.name}” 在该端点不存在。请核对平台文档中的真实模型 ID（通常是小写连字符格式，如 qwen3.8-max，而非显示名称）。` };
+      }
+      return { ok: true, latencyMs: Date.now() - start };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/timeout|abort/i.test(msg)) {
+        return { ok: false, error: `连接失败：请求超时（${CONNECT_TEST_TIMEOUT_MS / 1000}s）` };
+      }
+      return { ok: false, error: `连接失败: ${msg.slice(0, 300)}` };
+    }
+  }
+
+  /** 连通性测试：先走 GET /models 快速验证（毫秒级），平台不支持时回退流式 chat 首 chunk 探测 */
+  async function testModelConnectivity(cfg: { name: string; provider: string; baseUrl: string; apiKey?: string; reasoningModel?: boolean }): Promise<{ ok: boolean; latencyMs?: number; error?: string; requiresTemperatureOne?: boolean }> {
+    const fast = await probeModelsEndpoint(cfg);
+    if (fast !== 'unsupported') {
+      return fast;
+    }
     // 温度候选：推理模型（Kimi K3/DeepSeek-R1 等只接受 temperature=1）优先 1，普通模型优先 0。
     // 若返回 temperature 不合法（如 "only 1 is allowed"），自动换另一个温度重试。
     const temperatureCandidates = cfg.reasoningModel ? [1, 0] : [0, 1];
@@ -328,19 +426,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     let requiresTemperatureOne = false;
     for (const temperature of temperatureCandidates) {
       try {
-        const resp = await callModel({
-          config: baseConfig,
-          params: { maxTokens: 16, temperature },
-          userPrompt: '请回复: OK',
-        });
-        if (!resp.content && !resp.reasoningContent) {
-          return { ok: false, error: '端点返回了空响应，请检查模型 ID 是否正确' };
-        }
-        return { ok: true, latencyMs: Date.now() - start, requiresTemperatureOne };
+        const latencyMs = await probeModelStreamOnce(cfg, temperature);
+        return { ok: true, latencyMs, requiresTemperatureOne };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         lastError = msg;
-        // 仅当是 temperature 相关错误时才换候选重试；其它错误（404/401/网络等）直接跳出
+        // 仅当是 temperature 相关错误时才换候选重试；其它错误（404/401/网络/超时等）直接跳出
         if (!/temperature/i.test(msg)) break;
         // 拒绝了 temperature=0 且用 1 重试成功 → 该模型强制 temperature=1（如 Kimi K3）
         if (temperature === 0) requiresTemperatureOne = true;
@@ -359,11 +450,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   /** 独立的连通性测试接口（前端可预检，不落库） */
   app.post('/api/models/test', async (request) => {
-    const body = request.body as { name?: string; provider?: string; baseUrl?: string; apiKey?: string; reasoningModel?: boolean };
+    const body = request.body as { name?: string; provider?: string; baseUrl?: string; apiKey?: string; reasoningModel?: boolean; modelId?: string };
     if (!body.name || !body.baseUrl) {
       return { success: false, error: '模型名称和 Base URL 为必填项' };
     }
-    const result = await testModelConnectivity({ name: body.name, provider: body.provider || 'openai', baseUrl: body.baseUrl, apiKey: body.apiKey, reasoningModel: body.reasoningModel });
+    // 编辑场景：前端拿不到明文密钥，未显式传 apiKey 时回退到该模型已保存的密钥
+    let apiKey = body.apiKey;
+    if (apiKey === undefined && body.modelId) {
+      const existing = await prisma.modelConfig.findUnique({ where: { id: body.modelId } });
+      if (existing?.apiKey) {
+        apiKey = decryptApiKey(existing.apiKey);
+      }
+    }
+    const result = await testModelConnectivity({ name: body.name, provider: body.provider || 'openai', baseUrl: body.baseUrl, apiKey, reasoningModel: body.reasoningModel });
     return result.ok
       ? { success: true, data: { latencyMs: result.latencyMs } }
       : { success: false, error: result.error };
