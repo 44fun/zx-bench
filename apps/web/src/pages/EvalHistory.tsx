@@ -84,11 +84,10 @@ export default function EvalHistory() {
     return () => window.clearInterval(timer);
   }, [fetchRuns]);
 
-  // 按 groupName 分组（过滤掉已取消的评测，避免历史页堆积同名 cancelled 组）
+  // 按 groupName 分组（含已取消的评测，否则 cancelled 的 run 无法在 UI 删除，会一直残留并占用总览统计）
   const groupedRuns = useMemo<GroupedRun[]>(() => {
     const groups = new Map<string, RunItem[]>();
     for (const run of runs) {
-      if (run.status === 'cancelled') continue; // 已取消的不展示
       const key = run.groupName || `solo-${run.id}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(run);
