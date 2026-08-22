@@ -17,6 +17,8 @@ import { getJudgeSystemPrompt, buildJudgeUserPrompt } from './prompts.js';
 
 export interface JudgeOptions {
   localModel: ModelConfig;
+  /** 故障转移池：localModel 失败（429/超时/网络错误等）时依次尝试；全部失败才向上抛 */
+  fallbackModels?: ModelConfig[];
   frontierModel?: ModelConfig;
   escalationThreshold: number;  // 默认 0.85
 }
@@ -222,13 +224,54 @@ function mergeTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   };
 }
 
-/** 执行分层 Judge 流程 */
+/** 判定是否为可重试的瞬态错误（429 限流/5xx/超时/网络抖动） */
+function isTransientJudgeError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b429\b|rate.?limit|\b5\d\d\b|timeout|timed out|ETIMEDOUT|ECONNRESET|ECONNREFUSED|fetch failed|socket hang up/i.test(msg);
+}
+
+/** 带退避的单模型重试：瞬态错误重试 1 次，硬错误（401/403 等）立即放弃该模型 */
+async function callJudgeModelWithRetry(model: ModelConfig, input: JudgeInput): Promise<JudgeResult> {
+  try {
+    return await callJudgeModel(model, input);
+  } catch (err) {
+    if (!isTransientJudgeError(err)) throw err;
+    console.warn(`[judge] ${model.name} 瞬态失败（${err instanceof Error ? err.message : String(err).slice(0, 120)}），2s 后重试 1 次`);
+    await new Promise((r) => setTimeout(r, 2000));
+    return await callJudgeModel(model, input);
+  }
+}
+
+/** Judge 故障转移：按池顺序尝试，全部失败才抛出（错误信息聚合各模型的失败原因） */
+export async function callJudgeWithFailover(
+  models: ModelConfig[],
+  input: JudgeInput,
+): Promise<{ result: JudgeResult; failoverFrom?: Array<{ model: string; reason: string }> }> {
+  const failures: Array<{ model: string; reason: string }> = [];
+  for (const model of models) {
+    try {
+      const result = await callJudgeModelWithRetry(model, input);
+      return { result, failoverFrom: failures.length > 0 ? failures : undefined };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      failures.push({ model: model.name, reason });
+      console.error(`[judge] ${model.name} 判分失败: ${reason.slice(0, 160)}`);
+    }
+  }
+  throw new Error(
+    `全部 ${models.length} 个 Judge 均失败 — ` +
+    failures.map((f) => `${f.model}: ${f.reason.slice(0, 100)}`).join(' | '),
+  );
+}
+
+/** 执行分层 Judge 流程（第一层带故障转移池） */
 export async function runTieredJudge(
   input: JudgeInput,
   options: JudgeOptions,
-): Promise<{ localJudge: JudgeResult; frontierJudge?: JudgeResult; finalJudge: JudgeResult; escalated: boolean }> {
-  // 第一层：本地模型初判
-  const localJudge = await callJudgeModel(options.localModel, input);
+): Promise<{ localJudge: JudgeResult; frontierJudge?: JudgeResult; finalJudge: JudgeResult; escalated: boolean; failoverFrom?: Array<{ model: string; reason: string }> }> {
+  // 第一层：本地模型初判（localModel 优先，fallbackModels 依次兜底）
+  const judgeChain = [options.localModel, ...(options.fallbackModels || [])];
+  const { result: localJudge, failoverFrom } = await callJudgeWithFailover(judgeChain, input);
 
   // 判断是否需要升级
   const needsEscalation = localJudge.needsEscalation
@@ -238,8 +281,8 @@ export async function runTieredJudge(
     // 第二层：顶级模型争议复核
     const frontierJudge = await callJudgeModel(options.frontierModel, input);
     const finalJudge = mergeDecisions(localJudge, frontierJudge);
-    return { localJudge, frontierJudge, finalJudge, escalated: true };
+    return { localJudge, frontierJudge, finalJudge, escalated: true, failoverFrom };
   }
 
-  return { localJudge, finalJudge: localJudge, escalated: false };
+  return { localJudge, finalJudge: localJudge, escalated: false, failoverFrom };
 }

@@ -159,6 +159,8 @@ export async function orchestrateEvaluation(options: OrchestrateOptions): Promis
   const initialMaxTokens = modelParams.maxTokens ?? 8192;
   let effectiveMaxTokens = initialMaxTokens;
   let modelResponse: ModelResponse;
+  // P0-3: 记录截断补救——非空输出被 finish_reason=length 切断时升级预算重试成功的那次预算值
+  let truncationRetriedAt: number | null = null;
   try {
     modelResponse = await callModelWithRetry({
       config: modelConfig,
@@ -209,14 +211,20 @@ export async function orchestrateEvaluation(options: OrchestrateOptions): Promis
   if (!constraintsActive) {
     for (let retryAttempt = 0; retryAttempt < TOKEN_RETRY_BUDGETS.length; retryAttempt++) {
       const hasContent = modelResponse.content && modelResponse.content.trim().length > 0;
-      if (hasContent) break;
-      // 只有 finish_reason=length 才是 token 耗尽，其他原因（error/stop）不重试
-      if (modelResponse.finishReason !== 'length') break;
+      const truncatedByLength = modelResponse.finishReason === 'length';
+      // 完整结束 → 无需重试
+      if (!truncatedByLength) break;
+      // 计算下一个更大的预算档（修复原逻辑：用户配置大 maxTokens 时不得反向降到 16384 等更小档位）
+      const nextBudget = [...TOKEN_RETRY_BUDGETS, initialMaxTokens * 2]
+        .filter((b) => b > effectiveMaxTokens)
+        .sort((a, b) => a - b)[0];
+      // 没有更大预算档可用 → 接受现状（有内容时判分继续，无内容时走空响应失败）
+      if (nextBudget == null) break;
 
-      effectiveMaxTokens = TOKEN_RETRY_BUDGETS[retryAttempt];
+      effectiveMaxTokens = nextBudget;
       console.warn(
-        `[orchestrator] Reasoning model empty output (attempt ${retryAttempt + 1}), ` +
-        `upgrading maxTokens ${effectiveMaxTokens} for ${scenario.id}`
+        `[orchestrator] ${hasContent ? 'Output truncated mid-answer' : 'Empty output with finish_reason=length'} ` +
+        `(attempt ${retryAttempt + 1}), upgrading maxTokens to ${effectiveMaxTokens} for ${scenario.id}`
       );
       modelResponse = await callModelWithRetry({
         config: modelConfig,
@@ -226,6 +234,12 @@ export async function orchestrateEvaluation(options: OrchestrateOptions): Promis
         constraints: effectiveConstraints,
         stream: true,
       });
+      // 升级后有完整内容了，补记一条证据说明经历过截断补救
+      if (modelResponse.finishReason !== 'length') {
+        console.log(`[orchestrator] Truncation retry succeeded for ${scenario.id} at maxTokens=${effectiveMaxTokens}`);
+        truncationRetriedAt = effectiveMaxTokens;
+        break;
+      }
     }
   }
 
@@ -419,7 +433,7 @@ export async function orchestrateEvaluation(options: OrchestrateOptions): Promis
 
     // Judge 容错：调用失败不连坐丢弃生成结果，降级为纯确定性评分并标记人工复核
     let judgeFailedReason = '';
-    let judgeResult: { localJudge: JudgeResult; frontierJudge?: JudgeResult; finalJudge: JudgeResult; escalated: boolean } | null = null;
+    let judgeResult: { localJudge: JudgeResult; frontierJudge?: JudgeResult; finalJudge: JudgeResult; escalated: boolean; failoverFrom?: Array<{ model: string; reason: string }> } | null = null;
     try {
       judgeResult = await runTieredJudge(judgeInput, judgeOptions);
     } catch (judgeErr) {
@@ -431,6 +445,12 @@ export async function orchestrateEvaluation(options: OrchestrateOptions): Promis
       frontierJudge = judgeResult.frontierJudge;
       finalJudge = judgeResult.finalJudge;
       escalated = judgeResult.escalated;
+      // 故障转移可见化：记录主 Judge 失败、备用 Judge 接管的事实
+      if (judgeResult.failoverFrom?.length) {
+        result.evidence = [...(result.evidence || []),
+          ...judgeResult.failoverFrom.map((f) => `JUDGE_FAILOVER: ${f.model} 失败（${f.reason.slice(0, 120)}），已切换备用 Judge`),
+        ];
+      }
     } else {
       result.humanReviewRequired = true;
       result.evidence = [...(result.evidence || []),
@@ -537,7 +557,10 @@ export async function orchestrateEvaluation(options: OrchestrateOptions): Promis
     scoreHistory: [result.totalScore ?? 0],
     verdictHistory: [(structuredAnswer as Record<string, unknown>)?.verdict as string || 'unknown'],
     graderVersion: `${scenario.grader}@${scenario.graderVersion}`,
-    evidence: result.evidence || [],
+    evidence: [
+      ...(truncationRetriedAt != null ? [`TRUNCATION_RETRIED: 输出曾被 finish_reason=length 截断，已升级 maxTokens=${truncationRetriedAt} 重试并成功补全`] : []),
+      ...(result.evidence || []),
+    ],
     humanReviewRequired: escalated || (result.totalScore ?? 0) < 30,
     codeExtractionFailed,
     startedAt,
