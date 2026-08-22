@@ -27,7 +27,7 @@ export function detectTruncation(
     reasons.push(`output tokens (${outputTokens}) near max_tokens (${maxTokens})`);
   }
 
-  // 文本模式检测
+  // 文本模式检测（启发式信号，单独记录，不计入 truncated 硬判定）
   for (const pattern of TRUNCATION_PATTERNS) {
     if (pattern.test(content.trimEnd())) {
       reasons.push(`matches truncation pattern: ${pattern.source}`);
@@ -42,7 +42,9 @@ export function detectTruncation(
   }
 
   return {
-    truncated: reasons.length > 0,
+    // 硬判定：仅 token 层面的确凿证据才算真截断；
+    // 文本启发式（如回答以省略号收尾是刻意为之）不得污染截断标记
+    truncated: finishReason === 'length' || outputTokens > maxTokens * 0.95,
     reasons,
   };
 }
@@ -67,7 +69,10 @@ export function buildOutputMetadata(
     outputTokens,
     inputTokens: 0, // 由调用方覆盖（orchestrator 从模型响应回填）
     maxTokens,
-    incomplete: truncated || !containsFinalConclusion,
-    incompleteReasons: reasons.length > 0 ? reasons : (!containsFinalConclusion ? ['no final conclusion found'] : undefined),
+    // 语义修正：incomplete 仅表示真截断。
+    // 「回答中没有出现『结论/最终』等关键词」不代表不完整——数据抽取/代码题的正确答案通常不含这些词，
+    // 旧的 `truncated || !containsFinalConclusion` 会把大量正常完成的答案误标为截断，污染归因。
+    incomplete: truncated,
+    incompleteReasons: reasons.length > 0 ? reasons : undefined,
   };
 }
