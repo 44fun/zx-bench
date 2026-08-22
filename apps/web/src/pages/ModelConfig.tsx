@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Select, Button, Table, message, Popconfirm, Space, Tag, Switch, Alert, Modal } from 'antd';
+import { Form, Input, Select, Button, Table, message, Popconfirm, Space, Tag, Switch, Alert, Modal, Checkbox, Spin } from 'antd';
 import { useLanguage } from '../i18n';
 
 interface ModelItem {
@@ -17,6 +17,21 @@ const MODEL_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   judge: { label: 'AI Judge', color: 'purple' },
 };
 
+interface CcsModel { model: string; isPrimary: boolean; exists: boolean; existingId?: string }
+interface CcsProvider {
+  providerId: string;
+  name: string;
+  isCurrent: boolean;
+  baseUrl: string;
+  baseUrlSource: 'opencode' | 'derived';
+  apiKeyMasked: string;
+  models: CcsModel[];
+}
+interface CcsImportResult {
+  model: string; providerName: string; action: 'created' | 'updated' | 'skipped';
+  ok?: boolean; latencyMs?: number; error?: string;
+}
+
 export default function ModelConfigPage() {
   const { t } = useLanguage();
   const [models, setModels] = useState<ModelItem[]>([]);
@@ -27,6 +42,15 @@ export default function ModelConfigPage() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const modelType = Form.useWatch('modelType', form);
+  // CC Switch 导入
+  const [ccsOpen, setCcsOpen] = useState(false);
+  const [ccsProviders, setCcsProviders] = useState<CcsProvider[]>([]);
+  const [ccsLoading, setCcsLoading] = useState(false);
+  const [ccsError, setCcsError] = useState<string | null>(null);
+  const [ccsSelected, setCcsSelected] = useState<Set<string>>(new Set());
+  const [ccsOverride, setCcsOverride] = useState(false);
+  const [ccsImporting, setCcsImporting] = useState(false);
+  const [ccsResults, setCcsResults] = useState<{ results: CcsImportResult[]; summary: { created: number; updated: number; skipped: number } } | null>(null);
 
   const fetchModels = () => {
     fetch('/api/models')
@@ -121,6 +145,83 @@ export default function ModelConfigPage() {
     }
   };
 
+  // ===== CC Switch 导入 =====
+  const ccsItemKey = (p: CcsProvider, m: CcsModel) => `${p.providerId}|${m.model}`;
+
+  const ccsSelectableKeys = () => {
+    const keys: string[] = [];
+    for (const p of ccsProviders) {
+      for (const m of p.models) {
+        if (!(m.exists && !ccsOverride)) keys.push(ccsItemKey(p, m));
+      }
+    }
+    return keys;
+  };
+
+  const onCcsSelectAll = () => {
+    setCcsSelected(new Set(ccsSelectableKeys()));
+  };
+
+  const onCcsSelectInvert = () => {
+    const next = new Set<string>();
+    for (const k of ccsSelectableKeys()) {
+      if (!ccsSelected.has(k)) next.add(k);
+    }
+    setCcsSelected(next);
+  };
+
+  const openCcsImport = async () => {
+    setCcsOpen(true);
+    setCcsLoading(true);
+    setCcsError(null);
+    setCcsResults(null);
+    setCcsOverride(false);
+    setCcsSelected(new Set());
+    try {
+      const res = await fetch('/api/models/ccswitch/preview');
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || '读取失败');
+      setCcsProviders(data.data.providers || []);
+      // 默认勾选：每个 provider 的主模型（跳过已存在的）
+      const sel = new Set<string>();
+      for (const p of data.data.providers as CcsProvider[]) {
+        for (const m of p.models) {
+          if (m.isPrimary && !m.exists) sel.add(ccsItemKey(p, m));
+        }
+      }
+      setCcsSelected(sel);
+    } catch (err) {
+      setCcsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCcsLoading(false);
+    }
+  };
+
+  const onCcsImport = async () => {
+    if (ccsSelected.size === 0) { message.warning('请至少勾选一个模型'); return; }
+    setCcsImporting(true);
+    try {
+      const items = [...ccsSelected].map((key) => {
+        const [providerId, model] = key.split('|');
+        return { providerId, model };
+      });
+      const res = await fetch('/api/models/ccswitch/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || '导入失败');
+      setCcsResults(data.data);
+      message.success(`导入完成：新增 ${data.data.summary.created} 条 / 覆盖 ${data.data.summary.updated} 条 / 跳过 ${data.data.summary.skipped} 条`);
+      fetchModels();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err), 8);
+    } finally {
+      setCcsImporting(false);
+    }
+  };
+
   const openEdit = (model: ModelItem) => {
     setEditing(model);
     editForm.setFieldsValue({
@@ -187,7 +288,10 @@ export default function ModelConfigPage() {
 
   return (
     <div>
-      <h2 className="swiss-page-title">{t('model.title')}</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 className="swiss-page-title">{t('model.title')}</h2>
+        <Button onClick={openCcsImport}>从 CC Switch 导入</Button>
+      </div>
 
       <div className="swiss-card" style={{ marginBottom: 24, maxWidth: 580 }}>
         <div className="swiss-card-title">{t('model.add')}</div>
@@ -314,6 +418,102 @@ export default function ModelConfigPage() {
             </Button>
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title="从 CC Switch 导入模型"
+        open={ccsOpen}
+        onCancel={() => !ccsImporting && setCcsOpen(false)}
+        width={720}
+        footer={ccsResults ? (
+          <Button type="primary" onClick={() => setCcsOpen(false)}>关闭</Button>
+        ) : (
+          <Space>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              已选 {ccsSelected.size} 个模型（导入后自动测试连接）
+            </span>
+            <Button onClick={() => setCcsOpen(false)} disabled={ccsImporting}>取消</Button>
+            <Button type="primary" onClick={onCcsImport} loading={ccsImporting} disabled={ccsSelected.size === 0}>导入选中</Button>
+          </Space>
+        )}
+      >
+        {ccsLoading && <div style={{ textAlign: 'center', padding: 32 }}><Spin tip="正在读取 CC Switch 配置库..." /></div>}
+        {!ccsLoading && ccsError && (
+          <Alert type="warning" showIcon message="无法读取 CC Switch 配置" description={ccsError} />
+        )}
+        {!ccsLoading && !ccsError && ccsResults && (
+          <div>
+            <Alert
+              type="info" showIcon style={{ marginBottom: 12 }}
+              message={`新增 ${ccsResults.summary.created} 条 / 覆盖 ${ccsResults.summary.updated} 条 / 跳过 ${ccsResults.summary.skipped} 条`}
+              description="每条已自动测试连接；红色条目为连接失败（模型 ID 或端点不可用），可点击表格「编辑」修正后重试"
+            />
+            <Table
+              dataSource={ccsResults.results}
+              rowKey={(r) => `${r.providerName}|${r.model}`}
+              size="small" pagination={false}
+              columns={[
+                { title: 'Provider', dataIndex: 'providerName', width: 140 },
+                { title: '模型', dataIndex: 'model', ellipsis: true },
+                {
+                  title: '结果', key: 'result', width: 260,
+                  render: (_: unknown, r: CcsImportResult) => {
+                    if (r.action === 'skipped') return <Tag>跳过：{r.error}</Tag>;
+                    if (r.ok) return <Tag color="green">{r.action === 'created' ? '新增' : '覆盖'}成功 · {r.latencyMs}ms</Tag>;
+                    return <Tag color="red" style={{ maxWidth: 240, whiteSpace: 'normal' }}>{(r.error || '测试失败').slice(0, 120)}</Tag>;
+                  },
+                },
+              ]}
+            />
+          </div>
+        )}
+        {!ccsLoading && !ccsError && !ccsResults && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>来源：~\.cc-switch\cc-switch.db · 密钥仅显示掩码，导入时加密存储</span>
+              <Space size={6}>
+                <Button size="small" onClick={onCcsSelectAll} disabled={ccsProviders.length === 0}>全选</Button>
+                <Button size="small" onClick={onCcsSelectInvert} disabled={ccsProviders.length === 0}>反选</Button>
+                <span style={{ fontSize: 12 }}>覆盖已有配置</span>
+                <Switch size="small" checked={ccsOverride} onChange={setCcsOverride} />
+              </Space>
+            </div>
+            <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+              {ccsProviders.map((p) => (
+                <div key={p.providerId} style={{ border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '10px 14px', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600 }}>{p.name}</span>
+                    {p.isCurrent && <Tag color="green">当前使用</Tag>}
+                    <Tag>{p.baseUrlSource === 'opencode' ? '端点·权威' : '端点·推导'}</Tag>
+                    <code style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{p.baseUrl}</code>
+                    <span style={{ fontSize: 11, color: 'var(--text-placeholder)' }}>key {p.apiKeyMasked}</span>
+                  </div>
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {p.models.map((m) => {
+                      const key = ccsItemKey(p, m);
+                      const disabled = m.exists && !ccsOverride;
+                      return (
+                        <Checkbox
+                          key={key}
+                          checked={ccsSelected.has(key)}
+                          disabled={disabled}
+                          onChange={(e) => {
+                            const next = new Set(ccsSelected);
+                            if (e.target.checked) next.add(key); else next.delete(key);
+                            setCcsSelected(next);
+                          }}
+                        >
+                          <code style={{ fontSize: 12 }}>{m.model}</code>
+                          {m.isPrimary && <Tag color="blue" style={{ marginLeft: 6 }}>主模型</Tag>}
+                          {m.exists && <Tag color="purple">已存在</Tag>}
+                        </Checkbox>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

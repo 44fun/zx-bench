@@ -20,6 +20,7 @@ import { spawnSync } from 'node:child_process';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { URL } from 'node:url';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 
 /** Pack 短名 → 维度映射（all 表示不过滤） */
 const PACK_DIMENSION_MAP: Record<string, string> = {
@@ -466,6 +467,197 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return result.ok
       ? { success: true, data: { latencyMs: result.latencyMs } }
       : { success: false, error: result.error };
+  });
+
+  // ===== CC Switch 导入：读取本地 ~/.cc-switch/cc-switch.db 的 provider 库 =====
+  // 设计：预览接口只回传脱敏数据；导入接口在服务端按 providerId 重读真实 key（不信任客户端回传密钥）。
+
+  interface CcsModelCandidate { model: string; isPrimary: boolean; exists: boolean; existingId?: string }
+  interface CcsProviderPreview {
+    providerId: string;
+    name: string;
+    isCurrent: boolean;
+    baseUrl: string;
+    baseUrlSource: 'opencode' | 'derived';
+    apiKeyMasked: string;
+    models: CcsModelCandidate[];
+  }
+
+  /** Anthropic 端点 → OpenAI 兼容端点推导：去 /anthropic 后缀，无版本段则补 /v1 */
+  function deriveOpenAIBaseUrl(url: string): string {
+    let u = url.trim().replace(/\/+$/, '');
+    u = u.replace(/\/anthropic$/i, '');
+    if (!/\/v\d+[a-z]*$/i.test(u)) u += '/v1';
+    return u;
+  }
+
+  function maskKey(key: string): string {
+    if (!key) return '';
+    return key.length <= 8 ? '****' : `${key.slice(0, 4)}****${key.slice(-4)}`;
+  }
+
+  interface CcsDbRow { id: string; app_type: string; name: string; settings_config: string; is_current: number }
+
+  /** 只读打开 CC Switch SQLite 库并解析 claude 类 provider（opencode 行提供权威 OpenAI baseURL） */
+  function loadCcSwitchProviders(): { providers: CcsProviderPreview[]; error?: string } {
+    const dbPath = path.join(os.homedir(), '.cc-switch', 'cc-switch.db');
+    if (!fs.existsSync(dbPath)) {
+      return { providers: [], error: `未找到 CC Switch 配置库（期望路径 ${dbPath}）` };
+    }
+    let db: DatabaseSync;
+    try {
+      db = new DatabaseSync(dbPath, { readOnly: true });
+    } catch (err) {
+      return { providers: [], error: `无法打开 CC Switch 配置库（可能被占用）: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    try {
+      const rows = db.prepare(
+        "SELECT id, app_type, name, settings_config, is_current FROM providers WHERE app_type IN ('claude','opencode') ORDER BY sort_index"
+      ).all() as unknown as CcsDbRow[];
+      // opencode 行的 options.baseURL 是同 id provider 的权威 OpenAI 兼容端点
+      const openaiBaseById = new Map<string, string>();
+      for (const r of rows) {
+        if (r.app_type !== 'opencode') continue;
+        try {
+          const cfg = JSON.parse(r.settings_config) as { options?: { baseURL?: string } };
+          if (cfg?.options?.baseURL) openaiBaseById.set(r.id, cfg.options.baseURL);
+        } catch { /* 忽略解析失败的行 */ }
+      }
+      const providers: CcsProviderPreview[] = [];
+      for (const r of rows) {
+        if (r.app_type !== 'claude') continue;
+        let env: Record<string, string> = {};
+        try {
+          env = (JSON.parse(r.settings_config) as { env?: Record<string, string> })?.env || {};
+        } catch { /* 忽略解析失败的行 */ }
+        const anthropicUrl = env.ANTHROPIC_BASE_URL || '';
+        const apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || '';
+        if (!anthropicUrl) continue;
+        const fromOpencode = openaiBaseById.get(r.id);
+        const baseUrl = fromOpencode || deriveOpenAIBaseUrl(anthropicUrl);
+        // 收集模型名：主模型优先 ANTHROPIC_MODEL，其次 SONNET/OPUS/FABLE/HAIKU 槽位；去掉 Claude Code 的 [..] 上下文标注后去重
+        const cleanName = (s: string | undefined) => (s || '').replace(/\[[^\]]*\]\s*$/,'').trim();
+        const slots: Array<{ raw: string | undefined; primary: boolean }> = [
+          { raw: env.ANTHROPIC_MODEL, primary: true },
+          { raw: env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME || env.ANTHROPIC_DEFAULT_SONNET_MODEL, primary: true },
+          { raw: env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME || env.ANTHROPIC_DEFAULT_OPUS_MODEL, primary: false },
+          { raw: env.ANTHROPIC_DEFAULT_FABLE_MODEL_NAME || env.ANTHROPIC_DEFAULT_FABLE_MODEL, primary: false },
+          { raw: env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME || env.ANTHROPIC_DEFAULT_HAIKU_MODEL, primary: false },
+        ];
+        const models = new Map<string, CcsModelCandidate>();
+        for (const s of slots) {
+          const m = cleanName(s.raw);
+          if (!m) continue;
+          if (!models.has(m)) models.set(m, { model: m, isPrimary: s.primary && ![...models.values()].some((x) => x.isPrimary), exists: false });
+        }
+        if (models.size === 0) continue;
+        providers.push({
+          providerId: r.id,
+          name: r.name,
+          isCurrent: !!r.is_current,
+          baseUrl,
+          baseUrlSource: fromOpencode ? 'opencode' : 'derived',
+          apiKeyMasked: maskKey(apiKey),
+          models: [...models.values()],
+        });
+      }
+      return { providers };
+    } finally {
+      db.close();
+    }
+  }
+
+  // 预览：CC Switch 全部 provider + 候选模型（含与现有 ModelConfig 的判重标记），key 只回传掩码
+  app.get('/api/models/ccswitch/preview', async () => {
+    const { providers, error } = loadCcSwitchProviders();
+    if (error) return { success: false, error };
+    try {
+      const existing = await prisma.modelConfig.findMany({ select: { id: true, name: true, baseUrl: true } });
+      const existSet = new Map(existing.map((m) => [`${m.name}|${m.baseUrl.replace(/\/+$/, '')}`, m.id]));
+      for (const p of providers) {
+        for (const m of p.models) {
+          const hit = existSet.get(`${m.model}|${p.baseUrl.replace(/\/+$/, '')}`);
+          if (hit) { m.exists = true; m.existingId = hit; }
+        }
+      }
+      return { success: true, data: { providers } };
+    } catch (err) {
+      return { success: false, error: `比对已有模型失败: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  });
+
+  // 导入：服务端按 providerId 重读真实 key/baseUrl → 创建或覆盖 ModelConfig → 逐条自动测试连接
+  app.post('/api/models/ccswitch/import', async (request) => {
+    const body = request.body as { items?: Array<{ providerId?: string; model?: string; override?: boolean }> };
+    const items = Array.isArray(body.items) ? body.items.filter((i) => i.providerId && i.model) : [];
+    if (items.length === 0) return { success: false, error: '没有可导入的条目' };
+
+    const { providers, error } = loadCcSwitchProviders();
+    if (error) return { success: false, error };
+    const byId = new Map(providers.map((p) => [p.providerId, p]));
+
+    const results: Array<{ model: string; providerName: string; action: 'created' | 'updated' | 'skipped'; ok?: boolean; latencyMs?: number; error?: string }> = [];
+    for (const item of items) {
+      const p = byId.get(item.providerId!);
+      if (!p) {
+        results.push({ model: item.model!, providerName: item.providerId!, action: 'skipped', error: 'provider 不存在' });
+        continue;
+      }
+      let env: Record<string, string> = {};
+      const dbPath = path.join(os.homedir(), '.cc-switch', 'cc-switch.db');
+      // 复用 preview 已解析的数据不可行（key 被脱敏），这里直接重读一次 DB 取明文 key
+      let realKey = '';
+      let baseUrl = p.baseUrl;
+      try {
+        const db = new DatabaseSync(dbPath, { readOnly: true });
+        try {
+          const row = db.prepare('SELECT settings_config FROM providers WHERE id = ? AND app_type = \'claude\'').get(item.providerId!) as unknown as { settings_config: string } | undefined;
+          env = row ? ((JSON.parse(row.settings_config) as { env?: Record<string, string> })?.env || {}) : {};
+        } finally { db.close(); }
+      } catch (err) {
+        results.push({ model: item.model!, providerName: p.name, action: 'skipped', error: `读取密钥失败: ${err instanceof Error ? err.message : String(err)}` });
+        continue;
+      }
+      realKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || '';
+
+      const existing = await prisma.modelConfig.findFirst({ where: { name: item.model!, baseUrl } });
+      if (existing && !item.override) {
+        results.push({ model: item.model!, providerName: p.name, action: 'skipped', error: '已存在同名同端点配置（如需覆盖请开启覆盖开关）' });
+        continue;
+      }
+      const payload = {
+        displayName: `${p.name} · ${item.model}`,
+        provider: 'openai',
+        baseUrl,
+        apiKey: encryptApiKey(realKey),
+        modelType: existing?.modelType || 'tested',
+        reasoningModel: existing?.reasoningModel ?? false,
+        defaultParams: existing?.defaultParams || JSON.stringify({ temperature: 0, maxTokens: 8192 }),
+      };
+      let modelConfigId: string;
+      if (existing) {
+        await prisma.modelConfig.update({ where: { id: existing.id }, data: payload });
+        modelConfigId = existing.id;
+      } else {
+        const created = await prisma.modelConfig.create({ data: { name: item.model!, ...payload } });
+        modelConfigId = created.id;
+      }
+      // 自动测试连接（用刚落库的配置；失败仅标红，不回滚）
+      const test = await testModelConnectivity({ name: item.model!, provider: 'openai', baseUrl, apiKey: realKey });
+      results.push({
+        model: item.model!,
+        providerName: p.name,
+        action: existing ? 'updated' : 'created',
+        ok: test.ok,
+        latencyMs: test.latencyMs,
+        error: test.ok ? undefined : test.error,
+      });
+      void modelConfigId;
+    }
+    const created = results.filter((r) => r.action === 'created').length;
+    const updated = results.filter((r) => r.action === 'updated').length;
+    const skipped = results.filter((r) => r.action === 'skipped').length;
+    return { success: true, data: { results, summary: { created, updated, skipped } } };
   });
 
   app.get('/api/models', async () => {
