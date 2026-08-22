@@ -1566,6 +1566,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // 新增 / 更新单个题目（upsert）
+  // 各维度题量统计（仅 valid，与评测取题口径一致），供前端动态生成维度选项与文案
+  app.get('/api/scenarios/stats', async () => {
+    const grouped = await prisma.scenarioDefinition.groupBy({
+      by: ['dimension'],
+      where: { status: 'valid' },
+      _count: { _all: true },
+    });
+    const dimensions = grouped
+      .map((g) => ({ dimension: g.dimension, count: g._count._all }))
+      .sort((a, b) => b.count - a.count);
+    return { success: true, data: { dimensions, total: dimensions.reduce((sum, d) => sum + d.count, 0) } };
+  });
+
   app.post('/api/scenarios', async (request, reply) => {
     const s = request.body as Record<string, unknown>;
     if (!s.id || !s.promptTemplate) {

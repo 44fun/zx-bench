@@ -5,19 +5,22 @@ import { useLanguage } from '../i18n';
 
 const { Text } = Typography;
 
-/** 维度选项（与 EvalLive 的 DIMENSION_LABELS 保持一致） */
-const DIMENSION_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'program', label: '编程能力' },
-  { value: 'reasoning_math', label: '推理与数学' },
-  { value: 'safety_authority', label: '安全与权限' },
-  { value: 'cli_deep_tasks', label: '深度命令行任务' },
-  { value: 'data_extraction', label: '数据抽取' },
-  { value: 'agent_workflow', label: '智能体工作流' },
-  { value: 'instruction_following', label: '指令遵循' },
-  { value: 'tool_cli_workflow', label: '工具/CLI/工作流' },
-  { value: 'hallucination_resistance', label: '幻觉抵抗' },
-  { value: 'structured_output', label: '结构化输出' },
-];
+/** 维度显示名（与 EvalLive 的 DIMENSION_LABELS 保持一致）；不在映射中的维度直接展示原始 key */
+const DIMENSION_LABELS: Record<string, string> = {
+  program: '编程能力',
+  reasoning_math: '推理与数学',
+  safety_authority: '安全与权限',
+  cli_deep_tasks: '深度命令行任务',
+  data_extraction: '数据抽取',
+  agent_workflow: '智能体工作流',
+  instruction_following: '指令遵循',
+  tool_cli_workflow: '工具/CLI/工作流',
+  hallucination_resistance: '幻觉抵抗',
+  structured_output: '结构化输出',
+  code_repair: '代码修复',
+};
+
+interface DimensionStat { dimension: string; count: number }
 
 interface ModelOption {
   id: string;
@@ -35,6 +38,7 @@ export default function EvalCreate() {
   const [selectedModelReasoning, setSelectedModelReasoning] = useState(false);
   const [mode, setMode] = useState<'single' | 'batch'>('single');
   const [rerunLoaded, setRerunLoaded] = useState(false);
+  const [dimStats, setDimStats] = useState<DimensionStat[]>([]);
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [searchParams] = useSearchParams();
@@ -44,7 +48,18 @@ export default function EvalCreate() {
       .then((r) => r.json())
       .then((res) => { if (res.success) setModels(res.data); })
       .catch(console.error);
+    // 维度题量从场景库实时统计，避免文案与数据脱节
+    fetch('/api/scenarios/stats')
+      .then((r) => r.json())
+      .then((res) => { if (res.success) setDimStats(res.data.dimensions); })
+      .catch(console.error);
   }, []);
+
+  const dimensionOptions: Array<{ value: string; label: string }> = dimStats.map((d) => ({
+    value: d.dimension,
+    label: `${DIMENSION_LABELS[d.dimension] || d.dimension}（${d.count} 题）`,
+  }));
+  const totalQuestions = dimStats.reduce((sum, d) => sum + d.count, 0);
 
   // 重新评测：载入历史 run 的配置并预填表单
   useEffect(() => {
@@ -258,18 +273,18 @@ export default function EvalCreate() {
           <Form.Item
             label={t('eval.dimensions')}
             name="dimensionIds"
-            tooltip="选择本次评测覆盖的维度。不选则跑全部 10 个维度；只选部分维度可大幅缩短耗时，适合针对性复测或补测"
+            tooltip={`选择本次评测覆盖的维度。不选则跑全部 ${dimStats.length || '…'} 个维度共 ${totalQuestions || '…'} 道题；只选部分维度可大幅缩短耗时，适合针对性复测或补测`}
           >
             <Select
               mode="multiple"
               placeholder="默认全部维度（可只选一个或几个）"
               maxTagCount="responsive"
               allowClear
-              options={DIMENSION_OPTIONS}
+              options={dimensionOptions}
             />
           </Form.Item>
           <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: -16, marginBottom: 16 }}>
-            不选任何维度 = 全量评测；选中部分维度时仅跑对应题目，排行榜会按实际覆盖范围统计题量
+            不选任何维度 = 全量评测（{totalQuestions || '…'} 题）；选中部分维度时仅跑对应题目，排行榜会按实际覆盖范围统计题量
           </Text>
 
           {mode === 'single' && selectedModelReasoning && (
