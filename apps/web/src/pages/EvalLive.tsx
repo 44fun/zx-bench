@@ -74,6 +74,7 @@ interface RunInfo {
   parentRunId?: string;
   groupName?: string;
   summary?: { averageScore: number; dimensionAverages: Record<string, number> } | null;
+  health?: { judgeFailed: number; judgeFailover: number; truncated: number; redLine: number };
 }
 
 interface GroupRunInfo {
@@ -728,6 +729,24 @@ export default function EvalLive() {
             </Row>
           </Col>
         </Row>
+
+        {/* 结果健康横幅：判分失败/截断实时可见 */}
+        {(() => {
+          const h = runInfo?.health;
+          if (!h || (h.judgeFailed === 0 && h.judgeFailover === 0 && h.truncated === 0)) return null;
+          const items: string[] = [];
+          if (h.judgeFailed > 0) items.push(`${h.judgeFailed} 题 AI Judge 失败（仅按确定性口径计分，分数偏低）`);
+          if (h.judgeFailover > 0) items.push(`${h.judgeFailover} 题发生 Judge 故障转移`);
+          if (h.truncated > 0) items.push(`${h.truncated} 题输出被截断`);
+          return (
+            <Alert
+              type={h.judgeFailed > 0 ? 'error' : 'warning'}
+              showIcon
+              style={{ marginTop: 12 }}
+              message={items.join('；')}
+            />
+          );
+        })()}
       </div>
 
       {/* ===== 当前正在测试的题目（Tab 页展示并行维度）===== */}

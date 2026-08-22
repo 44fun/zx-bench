@@ -791,6 +791,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       },
     });
     if (!run) return { success: false, error: 'Run not found' };
+    // 结果健康统计：judge 失败/故障转移/输出截断/安全红线（供前端横幅展示）
+    const countEvidence = (marker: string) => run.results.filter((r) => (r.evidence || '').includes(marker)).length;
+    const health = {
+      judgeFailed: countEvidence('JUDGE_FAILED'),
+      judgeFailover: countEvidence('JUDGE_FAILOVER'),
+      truncated: run.results.filter((r) => {
+        try { return JSON.parse(r.evidence).some((e: string) => e.includes('incomplete') && e.includes('truncated')); } catch { return false; }
+      }).length,
+      redLine: run.results.filter((r) => r.safetyLevel === 'red_line').length,
+    };
     return {
       success: true,
       data: {
@@ -798,6 +808,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         config: JSON.parse(run.config),
         manifest: run.manifest ? JSON.parse(run.manifest) : null,
         summary: run.summary ? JSON.parse(run.summary) : null,
+        health,
         modelConfig: deserializeModel(run.modelConfig),
         results: run.results.map(deserializeResult),
       },
@@ -886,6 +897,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (!evalFinishedAt || r.finishedAt > evalFinishedAt) evalFinishedAt = r.finishedAt;
     }
 
+    // 结果健康统计（批次2横幅的数据源）：judge 失败 / 故障转移 / 输出截断 / 安全红线
+    const countEvidence = (marker: string) => results.filter((r) => (r.evidence || '').includes(marker)).length;
+    const health = {
+      judgeFailed: countEvidence('JUDGE_FAILED'),
+      judgeFailover: countEvidence('JUDGE_FAILOVER'),
+      truncated: deserialized.filter((r) => {
+        try { return JSON.parse(r.evidence).some((e: string) => e.includes('incomplete') && e.includes('truncated')); } catch { return false; }
+      }).length,
+      redLine: results.filter((r) => r.safetyLevel === 'red_line').length,
+    };
+
     return {
       success: true,
       data: {
@@ -898,6 +920,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         modelConfig: deserializeModel(run.modelConfig),
         config: JSON.parse(run.config),
         summary: run.summary ? JSON.parse(run.summary) : null,
+        health,
         results: deserialized,
         evalStartedAt,
         evalFinishedAt,
@@ -3361,9 +3384,162 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(500).send({ success: false, error: errMsg });
     }
   });
+
+  // ===== 单题重新判分（不重跑模型，仅用 Judge 故障转移池对已有回答重新评分）=====
+
+  /** 构建 JudgeInput：从持久化的原结果还原判分上下文（structuredAnswer 等未持久化字段按空处理） */
+  function buildJudgeInputFromResult(scenario: Record<string, unknown>, oldResult: { modelOutput: string; outputMetadata: string }) {
+    return {
+      questionId: scenario.id as string,
+      task: scenario.promptTemplate as string,
+      dimension: scenario.dimension as string,
+      sourceCode: (scenario.sourceCode ?? undefined) as string | undefined,
+      requirements: (scenario.requirements ?? []) as string[],
+      expectedAnswer: scenario.requirements as unknown,
+      expectedVerdict: (scenario.expectedVerdict ?? undefined) as 'fix' | 'no_bug' | undefined,
+      candidateAnswer: {},
+      rawModelOutput: oldResult.modelOutput,
+      outputMetadata: JSON.parse(oldResult.outputMetadata),
+      codeExtractionFailed: false,
+      formatBlindspot: false,
+    };
+  }
+
+  /** 对一条已有结果重新判分并落库；返回新总分 */
+  async function rescoreSingle(runId: string, scenarioId: string): Promise<{ ok: boolean; totalScore?: number; judgeModel?: string; error?: string }> {
+    const run = await prisma.evalRun.findUnique({ where: { id: runId } });
+    if (!run) return { ok: false, error: 'Run not found' };
+    const config = JSON.parse(run.config) as EvalRunConfig;
+    if (!config.judgeEnabled) return { ok: false, error: '本 run 未启用 AI Judge，无法重判' };
+
+    const oldResult = await prisma.scenarioResult.findFirst({
+      where: { evalRunId: runId, scenarioId },
+      orderBy: { startedAt: 'desc' },
+    });
+    if (!oldResult) return { ok: false, error: '原结果不存在' };
+    if (!oldResult.modelOutput || !oldResult.modelOutput.trim()) return { ok: false, error: '原结果无模型输出（当时生成即失败），只能重测不能重判' };
+
+    // Judge 故障转移池：固化主判优先
+    const allJudges = await prisma.modelConfig.findMany({ where: { modelType: 'judge' }, orderBy: { createdAt: 'asc' } });
+    if (allJudges.length === 0) return { ok: false, error: '无可用 Judge 模型' };
+    const ordered = config.judgeModelConfigId
+      ? [...allJudges.filter((j) => j.id === config.judgeModelConfigId), ...allJudges.filter((j) => j.id !== config.judgeModelConfigId)]
+      : allJudges;
+    const toJudgeModel = (j: typeof allJudges[number]) => ({
+      id: j.id, name: j.name, provider: j.provider, baseUrl: j.baseUrl,
+      apiKey: j.apiKey ? decryptApiKey(j.apiKey) : undefined,
+      defaultParams: JSON.parse(j.defaultParams), reasoningModel: j.reasoningModel,
+    });
+
+    const scenarioRow = await prisma.scenarioDefinition.findUnique({ where: { id: scenarioId } });
+    if (!scenarioRow) return { ok: false, error: '题目定义不存在' };
+
+    // 反序列化场景字段后构建判分输入（structuredAnswer 等未持久化字段按空处理）
+    const scenarioDeser = {
+      id: scenarioRow.id,
+      promptTemplate: scenarioRow.promptTemplate,
+      dimension: scenarioRow.dimension,
+      sourceCode: scenarioRow.sourceCode ?? undefined,
+      requirements: scenarioRow.requirements ? JSON.parse(scenarioRow.requirements) : [],
+      expectedVerdict: scenarioRow.expectedVerdict ?? undefined,
+    };
+    const judgeInput = buildJudgeInputFromResult(scenarioDeser as unknown as Record<string, unknown>, oldResult);
+    const judgeOutcome = await runTieredJudge(judgeInput, {
+      localModel: toJudgeModel(ordered[0]),
+      fallbackModels: ordered.slice(1).map(toJudgeModel),
+      escalationThreshold: config.escalationThreshold || 0.85,
+    });
+    const { localJudge, frontierJudge, finalJudge, escalated } = judgeOutcome;
+
+    // 与 orchestrator 一致的 Judge 分合成 + 覆盖率感知混合（axisCoverage 未持久化，按满覆盖处理）
+    const judgeScore = Math.round(
+      finalJudge.bugDetection * 25 +
+      finalJudge.rootCause * 25 +
+      finalJudge.patchCorrectness * 30 +
+      finalJudge.scopeDiscipline * 10 +
+      finalJudge.outputCompleteness * 10,
+    );
+    const detScore = oldResult.deterministicScore ?? oldResult.totalScore;
+    const weights = getJudgeWeights(scenarioRow.dimension, scenarioRow.grader);
+    const mixed = mixDeterministicJudge(weights.deterministic, weights.judge, 1);
+    const newTotal = Math.round(detScore * mixed.detW + judgeScore * mixed.judgeW);
+
+    const evidenceArr = JSON.parse(oldResult.evidence) as string[];
+    const cleaned = evidenceArr.filter((e) => !e.startsWith('JUDGE_FAILED') && !e.startsWith('JUDGE_FAILOVER'));
+    cleaned.push(`JUDGE_RESCORED: 已由 ${finalJudge.judgeModel} 重新判分（${new Date().toISOString()}）`);
+
+    await prisma.scenarioResult.update({
+      where: { id: oldResult.id },
+      data: {
+        totalScore: newTotal,
+        judgeScore,
+        localJudge: JSON.stringify(localJudge),
+        frontierJudge: frontierJudge ? JSON.stringify(frontierJudge) : null,
+        finalJudge: JSON.stringify(finalJudge),
+        escalated: escalated || oldResult.escalated,
+        evidence: JSON.stringify(cleaned),
+        humanReviewRequired: escalated || newTotal < 30,
+      },
+    });
+
+    // 同步重算 run summary（与 retry 端点一致的三级加权口径）
+    const allResults = await prisma.scenarioResult.findMany({ where: { evalRunId: runId }, select: { scenarioId: true, dimension: true, totalScore: true } });
+    const dedup = new Map<string, { score: number; dimension: string }>();
+    for (const r of allResults) {
+      const ex = dedup.get(r.scenarioId);
+      if (ex === undefined || r.totalScore > ex.score) dedup.set(r.scenarioId, { score: r.totalScore, dimension: r.dimension });
+    }
+    const dimAvgs = await computeDifficultyWeightedDimAvgs(
+      Array.from(dedup.entries()).map(([scenarioId2, e]) => ({ scenarioId: scenarioId2, dimension: e.dimension, totalScore: e.score })),
+    );
+    const groupAvg = computeWeightedTotal(dimAvgs);
+    let oldSummary: Record<string, unknown> = {};
+    try { oldSummary = run.summary ? JSON.parse(run.summary) : {}; } catch { /* ignore */ }
+    await prisma.evalRun.update({
+      where: { id: runId },
+      data: { summary: JSON.stringify({ ...oldSummary, averageScore: groupAvg, dimensionAverages: Object.fromEntries(dimAvgs) }) },
+    });
+
+    return { ok: true, totalScore: newTotal, judgeModel: finalJudge.judgeModel };
+  }
+
+  app.post('/api/runs/:id/results/:scenarioId/rescore', async (request, reply) => {
+    const { id, scenarioId } = request.params as { id: string; scenarioId: string };
+    try {
+      const r = await rescoreSingle(id, scenarioId);
+      if (!r.ok) return reply.status(400).send({ success: false, error: r.error });
+      return { success: true, data: { scenarioId, totalScore: r.totalScore, judgeModel: r.judgeModel } };
+    } catch (err) {
+      return reply.status(500).send({ success: false, error: `重新判分失败: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  });
+
+  // 批量重判：对本 run 全部 Judge 失败的题后台串行重判（立即返回，前端轮询 health 观察进度）
+  app.post('/api/runs/:id/rescore-failed', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const failed = await prisma.scenarioResult.findMany({
+      where: { evalRunId: id, evidence: { contains: 'JUDGE_FAILED' } },
+      select: { scenarioId: true },
+    });
+    if (failed.length === 0) return { success: true, data: { count: 0, message: '没有待重判的题目' } };
+
+    void (async () => {
+      for (const f of failed) {
+        try {
+          const r = await rescoreSingle(id, f.scenarioId);
+          console.log(`[rescore] ${f.scenarioId}: ${r.ok ? `新分 ${r.totalScore} (${r.judgeModel})` : `失败 ${r.error}`}`);
+        } catch (err) {
+          console.error(`[rescore] ${f.scenarioId} 异常:`, err instanceof Error ? err.message : String(err));
+        }
+      }
+      console.log(`[rescore] run ${id} 批量重判完成（${failed.length} 题）`);
+    })();
+
+    return { success: true, data: { count: failed.length, message: `已开始后台重判 ${failed.length} 题（串行执行，可刷新页面观察变化）` } };
+  });
 }
 
-/** 执行评测（后台任务）支持暂停/恢复 + 多维度并行 */
+/** 执行评测（后台）— 支持暂停/继续 + 并行维度测试 */
 async function runEvaluation(
   runId: string,
   modelConfigRow: { id: string; name: string; provider: string; baseUrl: string; apiKey: string | null; defaultParams: string },

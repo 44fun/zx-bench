@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Table, Tag, Descriptions, Collapse, Progress, Button, Space, Tooltip, message, Input, Select, Segmented } from 'antd';
-import { DownloadOutlined, FileSearchOutlined, ReloadOutlined, SearchOutlined, RobotOutlined } from '@ant-design/icons';
+import { Table, Tag, Descriptions, Collapse, Progress, Button, Space, Tooltip, message, Input, Select, Segmented, Alert } from 'antd';
+import { AuditOutlined, DownloadOutlined, FileSearchOutlined, ReloadOutlined, SearchOutlined, RobotOutlined } from '@ant-design/icons';
 import type { ScenarioResult } from '@zxbench/types';
 
 interface GroupResultsData {
@@ -14,6 +14,7 @@ interface GroupResultsData {
   modelConfig: { name: string; provider: string };
   config: Record<string, unknown>;
   summary: { averageScore: number; dimensionAverages: Record<string, number> } | null;
+  health?: { judgeFailed: number; judgeFailover: number; truncated: number; redLine: number };
   results: ScenarioResult[];
   evalStartedAt: string | null;
   evalFinishedAt: string | null;
@@ -77,6 +78,63 @@ export default function EvalDetail() {
   }, [id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // 单题重新判分（不重跑模型，仅用 Judge 池重评已有回答）
+  const [rescoringIds, setRescoringIds] = useState<string[]>([]);
+  const handleRescore = useCallback(async (scenarioId: string) => {
+    if (!id || rescoringIds.includes(scenarioId)) return;
+    setRescoringIds((prev) => [...prev, scenarioId]);
+    try {
+      const res = await fetch(`/api/runs/${id}/results/${scenarioId}/rescore`, { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        message.success(`重判完成：${scenarioId}，新得分 ${json.data.totalScore}（${json.data.judgeModel}）`);
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            results: prev.results.map((r) => (r.scenarioId === scenarioId ? { ...r, totalScore: json.data.totalScore } : r)),
+          };
+        });
+        fetchData();
+      } else {
+        message.error(`重判失败：${json.error}`, 6);
+      }
+    } catch {
+      message.error('重判请求失败');
+    } finally {
+      setRescoringIds((prev) => prev.filter((sid) => sid !== scenarioId));
+    }
+  }, [id, fetchData, rescoringIds]);
+
+  // 批量重判全部 Judge 失败的题（后台串行执行）
+  const [batchRescoring, setBatchRescoring] = useState(false);
+  const handleBatchRescore = useCallback(async () => {
+    if (!id || batchRescoring) return;
+    setBatchRescoring(true);
+    try {
+      const res = await fetch(`/api/runs/${id}/rescore-failed`, { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        message.info(json.data.message || '已开始后台重判');
+        if (json.data.count > 0) {
+          // 轮询刷新直到完成（粗略：每 10s 刷新一次，最多 30 次）
+          let ticks = 0;
+          const timer = setInterval(() => {
+            ticks++;
+            fetchData();
+            if (ticks >= 30) clearInterval(timer);
+          }, 10000);
+        }
+      } else {
+        message.error(json.error || '批量重判失败');
+      }
+    } catch {
+      message.error('批量重判请求失败');
+    } finally {
+      setBatchRescoring(false);
+    }
+  }, [id, batchRescoring, fetchData]);
 
   // 单题重试（最多同时4题）
   const handleRetry = useCallback(async (scenarioId: string) => {
@@ -222,6 +280,42 @@ export default function EvalDetail() {
         </div>
       )}
 
+      {/* 结果健康横幅：让判分失败/截断/红线自己浮出来，不再需要人工翻证据 */}
+      {(() => {
+        const h = data.health;
+        if (!h) return null;
+        const items: string[] = [];
+        if (h.judgeFailed > 0) items.push(`${h.judgeFailed} 题 AI Judge 失败（该题仅按确定性口径计分，分数偏低）`);
+        if (h.judgeFailover > 0) items.push(`${h.judgeFailover} 题发生过 Judge 故障转移（主判不可用已自动切换备用）`);
+        if (h.truncated > 0) items.push(`${h.truncated} 题输出被截断（可能影响判分完整性）`);
+        if (h.redLine > 0) items.push(`${h.redLine} 题触发安全红线`);
+        if (items.length === 0) return null;
+        return (
+          <Alert
+            type={h.judgeFailed > 0 ? 'error' : 'warning'}
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="结果质量提示"
+            description={
+              <div>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {items.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+                {h.judgeFailed > 0 && (
+                  <Button
+                    type="primary" danger size="small" style={{ marginTop: 8 }}
+                    loading={batchRescoring}
+                    onClick={handleBatchRescore}
+                  >
+                    一键重判 {h.judgeFailed} 道 Judge 失败题（不重跑模型）
+                  </Button>
+                )}
+              </div>
+            }
+          />
+        );
+      })()}
+
       <div className="swiss-card" style={{ marginBottom: 16 }}>
         <div className="swiss-card-title">导出 & 报告</div>
         <Space>
@@ -238,6 +332,22 @@ export default function EvalDetail() {
         <Descriptions column={3} size="small">
           <Descriptions.Item label="Max Tokens">{String(data.config?.maxTokens ?? '-')}</Descriptions.Item>
           <Descriptions.Item label="AI Judge">{data.config?.judgeEnabled ? '启用' : '禁用'}</Descriptions.Item>
+          {(() => {
+            const pool = data.config?.judgePoolNames;
+            if (!Array.isArray(pool) || pool.length === 0) return null;
+            return (
+              <Descriptions.Item label="Judge 池">
+                <Space size={4} wrap>
+                  {(pool as string[]).map((n, i) => (
+                    <span key={n}>
+                      {i > 0 && <span style={{ color: 'var(--text-placeholder)', marginRight: 4 }}>→</span>}
+                      <Tag color={i === 0 ? 'purple' : 'default'} style={{ fontSize: 11 }}>{i === 0 ? `主判 ${n}` : `备 ${n}`}</Tag>
+                    </span>
+                  ))}
+                </Space>
+              </Descriptions.Item>
+            );
+          })()}
           <Descriptions.Item label="安全红线">{data.config?.safetyCheckEnabled ? '启用' : '禁用'}</Descriptions.Item>
           <Descriptions.Item label="隐藏测试">{data.config?.hiddenTestsEnabled ? '启用' : '禁用'}</Descriptions.Item>
           <Descriptions.Item label="结构化输出">{data.config?.structuredOutputEnabled ? '启用' : '禁用'}</Descriptions.Item>
@@ -312,6 +422,18 @@ export default function EvalDetail() {
               render: (v: string) => <Tag color={v === 'red_line' ? 'red' : 'green'}>{v === 'red_line' ? '红线' : '安全'}</Tag>,
             },
             {
+              title: '归因', key: 'attribution', width: 150,
+              render: (_: unknown, r: ScenarioResult) => {
+                const ev = (r.evidence || []).join('\n');
+                const tags: React.ReactNode[] = [];
+                if (ev.includes('JUDGE_FAILED')) tags.push(<Tag key="jf" color="red">Judge失败</Tag>);
+                if (ev.includes('JUDGE_FAILOVER')) tags.push(<Tag key="jo" color="orange">Judge切换</Tag>);
+                if (ev.includes('TRUNCATION_RETRIED')) tags.push(<Tag key="tr" color="green">截断已补救</Tag>);
+                else if (/incomplete.*truncated|truncated.*incomplete/i.test(ev)) tags.push(<Tag key="tc" color="volcano">输出截断</Tag>);
+                return tags.length > 0 ? <Space size={2} wrap>{tags}</Space> : <span style={{ color: 'var(--text-placeholder)' }}>-</span>;
+              },
+            },
+            {
               title: '截断', key: 'truncated', width: 60,
               render: (_: unknown, r: ScenarioResult) => <Tag color={r.outputMetadata.truncated ? 'orange' : 'green'}>{r.outputMetadata.truncated ? '是' : '否'}</Tag>,
             },
@@ -332,19 +454,34 @@ export default function EvalDetail() {
               ),
             },
             {
-              title: '操作', key: 'action', width: 80, fixed: 'right' as const,
-              render: (_: unknown, r: ScenarioResult) => (
-                <Tooltip title="重新测试此题">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<ReloadOutlined spin={retryingIds.includes(r.scenarioId)} />}
-                    disabled={retryingIds.length >= 4 && !retryingIds.includes(r.scenarioId)}
-                    onClick={() => handleRetry(r.scenarioId)}
-                    style={{ color: r.totalScore < 60 ? '#f5222d' : undefined }}
-                  />
-                </Tooltip>
-              ),
+              title: '操作', key: 'action', width: 110, fixed: 'right' as const,
+              render: (_: unknown, r: ScenarioResult) => {
+                const judgeFailed = (r.evidence || []).some((e) => e.startsWith('JUDGE_FAILED'));
+                return (
+                  <Space size={0}>
+                    <Tooltip title="重新测试此题（重跑模型+判分）">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ReloadOutlined spin={retryingIds.includes(r.scenarioId)} />}
+                        disabled={retryingIds.length >= 4 && !retryingIds.includes(r.scenarioId)}
+                        onClick={() => handleRetry(r.scenarioId)}
+                        style={{ color: r.totalScore < 60 ? '#f5222d' : undefined }}
+                      />
+                    </Tooltip>
+                    {judgeFailed && (
+                      <Tooltip title="仅重新判分（不重跑模型，用当前可用 Judge 重评已有回答）">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<AuditOutlined spin={rescoringIds.includes(r.scenarioId)} />}
+                          onClick={() => handleRescore(r.scenarioId)}
+                        />
+                      </Tooltip>
+                    )}
+                  </Space>
+                );
+              },
             },
           ]}
         />
