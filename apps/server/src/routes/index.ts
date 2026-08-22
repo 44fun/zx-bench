@@ -1068,7 +1068,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // 构建 Judge 配置（在落库前解析，把实际生效的 Judge 池固化进 config，便于审计与重跑还原）
-      const judgeOptions = await resolveJudgeOptionsForBatch(config, body.judgeModelConfigId);
+      const judgeOptions = await resolveJudgeOptionsForBatch(config, body.judgeModelConfigIds || body.judgeModelConfigId);
 
       // 解析抽测配置：生成样本快照并固化进 config（重跑时按 ID 重放）
       await resolveSampleForConfig(config, body.dimensionIds || null);
@@ -1109,18 +1109,29 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // ===== 多模型并行评测：一次请求并发启动多个不同模型的评测任务 =====
   /** 解析 AI Judge 配置（批量场景共享一个 Judge 模型；实际生效 ID 固化进 config） */
-  /** 解析 Judge 故障转移池：指定的 judgeModelConfigId 优先，其余 judge 类型模型按创建序兜底 */
-  async function resolveJudgeOptionsForBatch(config: EvalRunConfig, judgeModelConfigId?: string): Promise<import('@zxbench/core').JudgeOptions | undefined> {
+  /** 解析 Judge 故障转移池：
+   *  - judgeModelSelection 为数组 → 按数组顺序组池（只含选中的，首个为主判）；
+   *  - 为单个 ID 字符串（旧字段兼容）→ 该模型优先，其余 judge 类型模型按创建序兜底；
+   *  - 未传 → 全部 judge 类型模型按创建序。 */
+  async function resolveJudgeOptionsForBatch(config: EvalRunConfig, judgeModelSelection?: string[] | string): Promise<import('@zxbench/core').JudgeOptions | undefined> {
     if (!config.judgeEnabled) return undefined;
     const allJudges = await prisma.modelConfig.findMany({ where: { modelType: 'judge' }, orderBy: { createdAt: 'asc' } });
     if (allJudges.length === 0) {
       console.warn('[Batch] judgeEnabled=true 但未配置 Judge 模型，跳过 AI Judge');
       return undefined;
     }
-    // 选中的 Judge 排最前，其余作为故障转移兜底
-    const ordered = judgeModelConfigId
-      ? [...allJudges.filter((j) => j.id === judgeModelConfigId), ...allJudges.filter((j) => j.id !== judgeModelConfigId)]
-      : allJudges;
+    const byId = new Map(allJudges.map((j) => [j.id, j]));
+    let ordered: typeof allJudges;
+    if (Array.isArray(judgeModelSelection) && judgeModelSelection.length > 0) {
+      ordered = judgeModelSelection
+        .map((id) => byId.get(id))
+        .filter((j): j is typeof allJudges[number] => Boolean(j));
+      if (ordered.length === 0) ordered = allJudges;
+    } else if (typeof judgeModelSelection === 'string' && judgeModelSelection && byId.has(judgeModelSelection)) {
+      ordered = [...allJudges.filter((j) => j.id === judgeModelSelection), ...allJudges.filter((j) => j.id !== judgeModelSelection)];
+    } else {
+      ordered = allJudges;
+    }
     const toJudgeModel = (j: typeof allJudges[number]) => ({
       id: j.id,
       name: j.name,
@@ -1132,7 +1143,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     });
     config.judgeModelConfigId = ordered[0].id;
     config.judgePoolNames = ordered.map((j) => j.name);
-    console.log(`[Batch] Judge 故障转移池（${ordered.length} 个）: ${ordered.map((j) => j.name).join(' → ')}${judgeModelConfigId ? '' : ' ← 未显式指定，按创建序'}`);
+    console.log(`[Batch] Judge 故障转移池（${ordered.length} 个）: ${ordered.map((j) => j.name).join(' → ')}`);
     return {
       localModel: toJudgeModel(ordered[0]),
       fallbackModels: ordered.slice(1).map(toJudgeModel),
@@ -1156,7 +1167,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const config = { ...DEFAULT_EVAL_CONFIG, ...body.config } as EvalRunConfig;
       // 解析抽测配置：在批量外层一次性生成样本快照，确保所有模型抽到同一批题（跨模型可比）
       await resolveSampleForConfig(config, body.dimensionIds || null);
-      const judgeOptions = await resolveJudgeOptionsForBatch(config, body.judgeModelConfigId);
+      const judgeOptions = await resolveJudgeOptionsForBatch(config, body.judgeModelConfigIds || body.judgeModelConfigId);
 
       // 预校验所有模型配置（缺失的加入 skipped，不阻断其他模型启动）
       const modelRows = await prisma.modelConfig.findMany({ where: { id: { in: modelConfigIds } } });

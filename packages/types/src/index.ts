@@ -560,7 +560,9 @@ export interface MultiRunStats {
 export interface CreateEvalRunRequest {
   name: string;
   modelConfigId: string;
-  judgeModelConfigId?: string;   // AI Judge 模型配置 ID
+  judgeModelConfigId?: string;   // AI Judge 模型配置 ID（旧字段，向后兼容）
+  /** Judge 故障转移池（按顺序，首个为主判）；未传则使用全部 judge 类型模型 */
+  judgeModelConfigIds?: string[];
   dimensionIds: string[];
   config: Partial<EvalRunConfig>;
   parentRunId?: string;           // 父运行ID（多维度并行）
@@ -571,7 +573,9 @@ export interface CreateEvalRunRequest {
 export interface CreateBatchEvalRunRequest {
   name?: string;                  // 批量任务名称（各子运行名 = name · 模型名）
   modelConfigIds: string[];       // 多个被测模型配置 ID（并发执行）
-  judgeModelConfigId?: string;   // AI Judge 模型配置 ID（共享）
+  judgeModelConfigId?: string;   // AI Judge 模型配置 ID（旧字段，向后兼容）
+  /** Judge 故障转移池（按顺序，首个为主判，所有子运行共享）；未传则使用全部 judge 类型模型 */
+  judgeModelConfigIds?: string[];
   dimensionIds: string[];         // 维度过滤（所有模型共享）
   config: Partial<EvalRunConfig>; // 共享评测配置
   groupName?: string;             // 并行组名（不传则自动生成）

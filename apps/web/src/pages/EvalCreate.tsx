@@ -79,7 +79,10 @@ export default function EvalCreate() {
           mode: 'single',
           modelConfigId: run.modelConfigId,
           judgeEnabled: !!cfg.judgeEnabled,
-          judgeModelConfigId: cfg.judgeModelConfigId || undefined,
+          // 优先按固化池顺序还原（名称→ID）；旧 run 只有主判 ID
+          judgeModelConfigIds: Array.isArray(cfg.judgePoolNames) && cfg.judgePoolNames.length > 0
+            ? cfg.judgePoolNames.map((n: string) => models.find((m) => m.name === n)?.id).filter(Boolean)
+            : (cfg.judgeModelConfigId ? [cfg.judgeModelConfigId] : undefined),
           dimensionIds: Array.isArray(run.dimensionFilter) ? run.dimensionFilter : [],
           maxTokens: cfg.maxTokens,
           temperature: cfg.temperature ?? null,
@@ -154,7 +157,7 @@ export default function EvalCreate() {
           body: JSON.stringify({
             name: values.name || undefined,
             modelConfigIds,
-            judgeModelConfigId: values.judgeModelConfigId || undefined,
+            judgeModelConfigIds: (values.judgeModelConfigIds as string[]) || undefined,
             dimensionIds: (values.dimensionIds as string[]) || [],
             config,
           }),
@@ -173,7 +176,7 @@ export default function EvalCreate() {
           body: JSON.stringify({
             name: values.name,
             modelConfigId: values.modelConfigId,
-            judgeModelConfigId: values.judgeModelConfigId || undefined,
+            judgeModelConfigIds: (values.judgeModelConfigIds as string[]) || undefined,
             dimensionIds: (values.dimensionIds as string[]) || [],
             config,
           }),
@@ -418,11 +421,11 @@ export default function EvalCreate() {
               <Col span={12}>
                 <Form.Item
                   label={t('eval.judgeModel')}
-                  name="judgeModelConfigId"
+                  name="judgeModelConfigIds"
                   preserve
-                  tooltip="选择用于评分复核的模型。若不选择，系统会自动使用第一个配置的 Judge 模型"
+                  tooltip="可多选，按选择顺序组成故障转移池：第一个为主判，其余在其失败（限流/超时/网络错误）时自动接替。留空则使用全部 Judge 模型（按创建序）"
                 >
-                  <Select placeholder="选择 Judge 模型（可选）" allowClear>
+                  <Select mode="multiple" placeholder="选择 Judge 模型（可多选）" allowClear maxTagCount="responsive">
                     {judgeModels.map((m) => (
                       <Select.Option key={m.id} value={m.id}>{m.name} ({m.provider})</Select.Option>
                     ))}
