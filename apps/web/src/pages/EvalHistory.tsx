@@ -14,6 +14,7 @@ interface RunItem {
   parentRunId: string | null;
   summary: { averageScore: number; totalScenarios: number; safetyRedLineCount: number; completedScenarios: number; totalOutputTokens?: number; avgTokensPerSecond?: number } | null;
   modelConfig: { name: string };
+  config?: { sampleSize?: number; scenarioIds?: string[] } | null;
 }
 
 interface GroupedRun {
@@ -250,6 +251,9 @@ export default function EvalHistory() {
               render: (_: unknown, g: GroupedRun) => (
                 <div>
                   <span style={{ fontWeight: 500 }}>{g.mainRun.name}</span>
+                  {g.mainRun.config?.sampleSize && g.mainRun.config.scenarioIds?.length ? (
+                    <Tag color="purple" style={{ marginLeft: 8, fontSize: 11 }}>抽测 {g.mainRun.config.scenarioIds.length} 题</Tag>
+                  ) : null}
                   {g.allRuns.length > 1 && (
                     <Badge count={g.allRuns.length} size="small" style={{ marginLeft: 8, backgroundColor: '#1890ff' }} />
                   )}

@@ -39,6 +39,8 @@ export default function EvalCreate() {
   const [mode, setMode] = useState<'single' | 'batch'>('single');
   const [rerunLoaded, setRerunLoaded] = useState(false);
   const [dimStats, setDimStats] = useState<DimensionStat[]>([]);
+  // 抽测快照：重跑时从历史 run 的 config 载入，保证复用同一样本集；修改抽测配置后作废
+  const [sampleSnapshot, setSampleSnapshot] = useState<string[] | null>(null);
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [searchParams] = useSearchParams();
@@ -88,6 +90,8 @@ export default function EvalCreate() {
           structuredOutputEnabled: !!cfg.structuredOutputEnabled,
           parallelism: cfg.parallelism,
           parallelMode: cfg.parallelMode,
+          enableSampling: !!cfg.sampleSize,
+          sampleSize: cfg.sampleSize || 5,
           answerFirst: !!c.answerFirst,
           maxReasoningTokens: c.maxReasoningTokens,
           maxAnswerTokens: c.maxAnswerTokens,
@@ -95,6 +99,7 @@ export default function EvalCreate() {
           onLimit: c.onLimit,
         });
         setJudgeEnabled(!!cfg.judgeEnabled);
+        setSampleSnapshot(Array.isArray(cfg.scenarioIds) && cfg.scenarioIds.length > 0 ? cfg.scenarioIds : null);
         setRerunLoaded(true);
         const model = models.find((m) => m.id === run.modelConfigId);
         if (model?.reasoningModel) setSelectedModelReasoning(true);
@@ -119,6 +124,7 @@ export default function EvalCreate() {
       const hasActiveConstraint = Object.keys(constraints).length > 0;
       if (hasActiveConstraint && values.onLimit) constraints.onLimit = values.onLimit;
 
+      const samplingEnabled = !!values.enableSampling && !!values.sampleSize;
       const config = {
         maxTokens: values.maxTokens || 8192,
         temperature: values.temperature ?? null,
@@ -130,6 +136,8 @@ export default function EvalCreate() {
         structuredOutputEnabled: values.structuredOutputEnabled || false,
         parallelism: values.parallelism ?? 4,
         parallelMode: values.parallelMode || 'global',
+        ...(samplingEnabled ? { sampleSize: values.sampleSize } : {}),
+        ...(samplingEnabled && sampleSnapshot && sampleSnapshot.length > 0 ? { scenarioIds: sampleSnapshot } : {}),
         ...(Object.keys(constraints).length > 0 ? { constraints } : {}),
       };
 
@@ -286,6 +294,38 @@ export default function EvalCreate() {
           <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: -16, marginBottom: 16 }}>
             不选任何维度 = 全量评测（{totalQuestions || '…'} 题）；选中部分维度时仅跑对应题目，排行榜会按实际覆盖范围统计题量
           </Text>
+
+          {/* ===== 抽测模式：每维按难度分层抽取 N 题 ===== */}
+          <Row gutter={24} align="middle">
+            <Col span={6}>
+              <Form.Item label="抽测模式" name="enableSampling" valuePropName="checked" initialValue={false} style={{ marginBottom: 8 }}>
+                <Switch onChange={() => setSampleSnapshot(null)} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prev, cur) => prev.enableSampling !== cur.enableSampling}
+              >
+                {({ getFieldValue }) => getFieldValue('enableSampling') && (
+                  <Form.Item
+                    label="每维抽题数"
+                    name="sampleSize"
+                    initialValue={5}
+                    style={{ marginBottom: 8 }}
+                    rules={[{ required: true, message: '请填写每维抽题数' }]}
+                  >
+                    <InputNumber min={1} max={200} precision={0} style={{ width: '100%' }} onChange={() => setSampleSnapshot(null)} />
+                  </Form.Item>
+                )}
+              </Form.Item>
+            </Col>
+            <Col span={10}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                每维按难度分层随机抽 N 题，适合日常回归与快速验证；重跑自动复用同一样本集，修改数量后重新抽题
+              </Text>
+            </Col>
+          </Row>
 
           {mode === 'single' && selectedModelReasoning && (
             <Alert

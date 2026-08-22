@@ -480,6 +480,12 @@ export interface EvalRunConfig {
   parallelMode?: 'global' | 'per_dimension';  // 并行模式: global=全局并发池, per_dimension=维度独立并行, 默认global
   /** 思考/输出约束策略（反拖尾）：先答案后原因、token 上限、硬时间上限、超限处置 */
   constraints?: EvalConstraints;
+  /** 抽测：每维抽取题数（≥1 时仅评测抽样题目，用于日常回归监控与轻量评测） */
+  sampleSize?: number;
+  /** 抽样种子（首次抽样时自动生成；同一种子 + 同一题库可重放出相同样本） */
+  sampleSeed?: string;
+  /** 抽样快照：实际抽中的题目 ID 列表（创建时固化落库，保证重跑可比、批量模型同题） */
+  scenarioIds?: string[];
 }
 
 // ----- 评测摘要 -----

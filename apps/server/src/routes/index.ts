@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '../index.js';
 import type { APIResponse, ModelConfig, EvalRunConfig, CreateEvalRunRequest, CreateBatchEvalRunRequest, CreateBatchEvalRunResponse, BatchProgressResponse, BatchRunStatus, BatchRunInfo, ScenarioTier, EvalProgress, DimensionProgress, QuestionLiveResult, EvalStage, OutputPolicy } from '@zxbench/types';
 import { generateId, generateRunId } from '@zxbench/utils';
-import { orchestrateEvaluation, generateManifest, callModel } from '@zxbench/core';
+import { orchestrateEvaluation, generateManifest, callModel, runTieredJudge, getJudgeWeights, mixDeterministicJudge } from '@zxbench/core';
 import { generateReport, generateCompareReport } from '@zxbench/core';
 import type { ReportUserPromptData, CompareReportUserPromptData } from '@zxbench/core';
 import { computeWeightedTotal, computeDifficultyWeightedDimAvgs as computeDifficultyWeightedDimAvgsPure } from '@zxbench/core';
@@ -713,6 +713,125 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  // ===== 抽测（sampling）：确定性随机抽题，支持日常回归监控与轻量评测 =====
+  // 设计：创建 run 时一次性解析样本并固化 ID 快照进 config —— 单模型重跑可比、批量多模型同题。
+
+  /** 字符串哈希为 32 位整数种子 */
+  function hashSeed(str: string): number {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  /** mulberry32 确定性伪随机数生成器 */
+  function mulberry32(seed: number): () => number {
+    let a = seed >>> 0;
+    return () => {
+      a |= 0; a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /** Fisher-Yates 确定性洗牌（不修改原数组） */
+  function seededShuffle<T>(arr: T[], rng: () => number): T[] {
+    const out = [...arr];
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
+  /**
+   * 按难度分层抽样：每个维度内按 easy/medium/hard/adversarial 的题量比例分配名额
+   * （最大余数法），再在各自难度桶内做种子洗牌抽取。保证样本的难度分布与全量一致，
+   * 回归对比分数不被随机难度波动污染。
+   */
+  function stratifiedSample(scenarios: Array<{ id: string; dimension: string; difficulty: string }>, sampleSize: number, seed: string): string[] {
+    const rng = mulberry32(hashSeed(seed));
+    const picked: string[] = [];
+    // 按维度分组，维度间互不影响
+    const byDim = new Map<string, typeof scenarios>();
+    for (const s of scenarios) {
+      if (!byDim.has(s.dimension)) byDim.set(s.dimension, []);
+      byDim.get(s.dimension)!.push(s);
+    }
+    for (const dimScenarios of byDim.values()) {
+      if (dimScenarios.length <= sampleSize) {
+        picked.push(...dimScenarios.map((s) => s.id));
+        continue;
+      }
+      // 维度内按难度分桶 + 按比例分配名额（最大余数法）
+      const byDiff = new Map<string, typeof scenarios>();
+      for (const s of dimScenarios) {
+        if (!byDiff.has(s.difficulty)) byDiff.set(s.difficulty, []);
+        byDiff.get(s.difficulty)!.push(s);
+      }
+      const diffs = [...byDiff.keys()];
+      const sizes = diffs.map((d) => byDiff.get(d)!.length);
+      const total = dimScenarios.length;
+      const alloc = sizes.map((sz) => Math.floor((sampleSize * sz) / total));
+      let left = sampleSize - alloc.reduce((a, b) => a + b, 0);
+      const remainders = diffs
+        .map((d, i) => ({ i, rem: (sampleSize * sizes[i]) / total - alloc[i] }))
+        .sort((a, b) => b.rem - a.rem || sizes[b.i] - sizes[a.i]);
+      for (const { i } of remainders) {
+        if (left <= 0) break;
+        if (alloc[i] < sizes[i]) { alloc[i]++; left--; }
+      }
+      // 剩余名额兜底给未满桶（比例份额被取整截断的小桶）
+      while (left > 0) {
+        const idx = diffs.findIndex((d, i) => alloc[i] < sizes[i]);
+        if (idx < 0) break;
+        alloc[idx]++; left--;
+      }
+      // 各难度桶内种子洗牌后按名额抽取
+      diffs.forEach((d, i) => {
+        picked.push(...seededShuffle(byDiff.get(d)!, rng).slice(0, alloc[i]).map((s) => s.id));
+      });
+    }
+    return picked;
+  }
+
+  /**
+   * 创建 run 前解析抽测配置（原地修改 config）：
+   * - config.scenarioIds 已存在 → 重放快照，不做任何事；
+   * - config.sampleSize 有效 → 对 valid 题目套用维度过滤 + 时效过滤后抽样，
+   *   生成 sampleSeed 并把抽中的 ID 列表写入 config.scenarioIds；
+   * - 未启用抽测 → 不做任何事。
+   */
+  async function resolveSampleForConfig(config: EvalRunConfig, dimensionFilter: string[] | null | undefined): Promise<void> {
+    const n = Math.floor(Number(config.sampleSize));
+    if (!Number.isFinite(n) || n < 1) return;
+    if (Array.isArray(config.scenarioIds) && config.scenarioIds.length > 0) return; // 重放快照
+    let pool = await prisma.scenarioDefinition.findMany({ where: { status: 'valid' } });
+    if (dimensionFilter && dimensionFilter.length > 0) {
+      pool = pool.filter((s) => dimensionFilter.includes(s.dimension));
+    }
+    // 与 runEvaluation 一致的时效护栏：剔除已过 validUntil 的题目
+    pool = pool.filter((s) => {
+      try {
+        const req = s.requirements ? JSON.parse(s.requirements) : null;
+        if (req?.validUntil && new Date(req.validUntil).getTime() < Date.now()) return false;
+      } catch { /* requirements 解析失败不阻塞选题 */ }
+      return true;
+    });
+    config.sampleSize = Math.min(n, 500);
+    if (pool.length <= config.sampleSize) {
+      // 题目不足时全取（快照仍落库，保证后续重跑稳定）
+      config.sampleSeed = 'all';
+      config.scenarioIds = pool.map((s) => s.id);
+      return;
+    }
+    config.sampleSeed = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    config.scenarioIds = stratifiedSample(pool as Array<{ id: string; dimension: string; difficulty: string }>, config.sampleSize, config.sampleSeed);
+  }
+
   // 创建并启动评测运行
   app.post('/api/runs', async (request, reply) => {
     try {
@@ -759,6 +878,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           console.warn('judgeEnabled=true 但未配置 Judge 模型，跳过 AI Judge');
         }
       }
+
+      // 解析抽测配置：生成样本快照并固化进 config（重跑时按 ID 重放）
+      await resolveSampleForConfig(config, body.dimensionIds || null);
 
       const run = await prisma.evalRun.create({
         data: {
@@ -835,6 +957,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
       const groupName = body.groupName || `batch-${Date.now()}`;
       const config = { ...DEFAULT_EVAL_CONFIG, ...body.config } as EvalRunConfig;
+      // 解析抽测配置：在批量外层一次性生成样本快照，确保所有模型抽到同一批题（跨模型可比）
+      await resolveSampleForConfig(config, body.dimensionIds || null);
       const judgeOptions = await resolveJudgeOptionsForBatch(config, body.judgeModelConfigId);
 
       // 预校验所有模型配置（缺失的加入 skipped，不阻断其他模型启动）
@@ -3059,6 +3183,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(500).send({ success: false, error: errMsg });
     }
   });
+
 }
 
 /** 执行评测（后台）— 支持暂停/继续 + 并行维度测试 */
@@ -3126,6 +3251,15 @@ async function runEvaluation(
   const skippedExpired = beforeExpireFilter - filteredScenarios.length;
   if (skippedExpired > 0) {
     console.log(`[Eval ${runId}] 跳过 ${skippedExpired} 道已过 validUntil 的时效题`);
+  }
+
+  // 抽测快照：仅评测创建时固化抽中的题目（重跑/批量复用同一样本集）
+  if (Array.isArray(config.scenarioIds) && config.scenarioIds.length > 0) {
+    const allow = new Set(config.scenarioIds);
+    const beforeSampleFilter = filteredScenarios.length;
+    filteredScenarios = filteredScenarios.filter((s) => allow.has(s.id));
+    // 快照中已失效（删除/过期）的题目自然落选，只跑仍存在的
+    console.log(`[Eval ${runId}] 抽测样本: ${filteredScenarios.length} 题 (sampleSize=${config.sampleSize}, seed=${config.sampleSeed}, 命中 ${filteredScenarios.length}/${beforeSampleFilter})`);
   }
 
   console.log(`[Eval ${runId}] All scenarios: ${scenarios.length}, Filtered: ${filteredScenarios.length}, Dimensions: ${dimensionFilter?.join(', ') || 'all'}`);
