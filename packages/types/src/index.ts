@@ -469,6 +469,10 @@ export interface EvalRunConfig {
   judgeEnabled: boolean;
   /** 实际生效的 Judge 模型配置 ID（创建时固化，重跑/审计时还原同一 Judge） */
   judgeModelConfigId?: string;
+  /** Judge 故障转移池（创建时固化的全部候选 Judge 名称，首个为主判） */
+  judgePoolNames?: string[];
+  /** Judge 故障转移池（创建时固化的全部候选 Judge 名称，首个为主判） */
+  judgePoolNames?: string[];
   judgeLocalModel?: string;
   judgeFrontierModel?: string;
   escalationEnabled: boolean;

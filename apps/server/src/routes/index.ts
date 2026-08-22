@@ -852,32 +852,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         configNotice = `推理模型 ${modelConfig.name} 的 maxTokens 低于 32768，已自动提升至 49152（拉齐评测配置，避免思考链截断压低分数）`;
       }
 
-      // 构建 Judge 配置（在落库前解析，把实际生效的 Judge ID 固化进 config，便于审计与重跑还原）
-      let judgeOptions: import('@zxbench/core').JudgeOptions | undefined;
-      if (config.judgeEnabled) {
-        // 优先使用前端传入的 judgeModelConfigId，否则查找第一个 judge 类型的模型
-        let judgeRow = body.judgeModelConfigId
-          ? await prisma.modelConfig.findUnique({ where: { id: body.judgeModelConfigId } })
-          : await prisma.modelConfig.findFirst({ where: { modelType: 'judge' } });
-        if (judgeRow) {
-          config.judgeModelConfigId = judgeRow.id;
-          console.log(`[Eval] Judge 模型已选定: ${judgeRow.name} (${judgeRow.id})${body.judgeModelConfigId ? '' : ' ← findFirst 自动选择，建议前端显式指定'}`);
-          judgeOptions = {
-            localModel: {
-              id: judgeRow.id,
-              name: judgeRow.name,
-              provider: judgeRow.provider,
-              baseUrl: judgeRow.baseUrl,
-              apiKey: judgeRow.apiKey ? decryptApiKey(judgeRow.apiKey) : undefined,
-              defaultParams: JSON.parse(judgeRow.defaultParams),
-              reasoningModel: judgeRow.reasoningModel,
-            },
-            escalationThreshold: config.escalationThreshold || 0.85,
-          };
-        } else {
-          console.warn('judgeEnabled=true 但未配置 Judge 模型，跳过 AI Judge');
-        }
-      }
+      // 构建 Judge 配置（在落库前解析，把实际生效的 Judge 池固化进 config，便于审计与重跑还原）
+      const judgeOptions = await resolveJudgeOptionsForBatch(config, body.judgeModelConfigId);
 
       // 解析抽测配置：生成样本快照并固化进 config（重跑时按 ID 重放）
       await resolveSampleForConfig(config, body.dimensionIds || null);
@@ -918,27 +894,33 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // ===== 多模型并行评测：一次请求并发启动多个不同模型的评测任务 =====
   /** 解析 AI Judge 配置（批量场景共享一个 Judge 模型；实际生效 ID 固化进 config） */
+  /** 解析 Judge 故障转移池：指定的 judgeModelConfigId 优先，其余 judge 类型模型按创建序兜底 */
   async function resolveJudgeOptionsForBatch(config: EvalRunConfig, judgeModelConfigId?: string): Promise<import('@zxbench/core').JudgeOptions | undefined> {
     if (!config.judgeEnabled) return undefined;
-    const judgeRow = judgeModelConfigId
-      ? await prisma.modelConfig.findUnique({ where: { id: judgeModelConfigId } })
-      : await prisma.modelConfig.findFirst({ where: { modelType: 'judge' } });
-    if (!judgeRow) {
+    const allJudges = await prisma.modelConfig.findMany({ where: { modelType: 'judge' }, orderBy: { createdAt: 'asc' } });
+    if (allJudges.length === 0) {
       console.warn('[Batch] judgeEnabled=true 但未配置 Judge 模型，跳过 AI Judge');
       return undefined;
     }
-    config.judgeModelConfigId = judgeRow.id;
-    console.log(`[Batch] Judge 模型已选定: ${judgeRow.name} (${judgeRow.id})${judgeModelConfigId ? '' : ' ← findFirst 自动选择，建议前端显式指定'}`);
+    // 选中的 Judge 排最前，其余作为故障转移兜底
+    const ordered = judgeModelConfigId
+      ? [...allJudges.filter((j) => j.id === judgeModelConfigId), ...allJudges.filter((j) => j.id !== judgeModelConfigId)]
+      : allJudges;
+    const toJudgeModel = (j: typeof allJudges[number]) => ({
+      id: j.id,
+      name: j.name,
+      provider: j.provider,
+      baseUrl: j.baseUrl,
+      apiKey: j.apiKey ? decryptApiKey(j.apiKey) : undefined,
+      defaultParams: JSON.parse(j.defaultParams),
+      reasoningModel: j.reasoningModel,
+    });
+    config.judgeModelConfigId = ordered[0].id;
+    config.judgePoolNames = ordered.map((j) => j.name);
+    console.log(`[Batch] Judge 故障转移池（${ordered.length} 个）: ${ordered.map((j) => j.name).join(' → ')}${judgeModelConfigId ? '' : ' ← 未显式指定，按创建序'}`);
     return {
-      localModel: {
-        id: judgeRow.id,
-        name: judgeRow.name,
-        provider: judgeRow.provider,
-        baseUrl: judgeRow.baseUrl,
-        apiKey: judgeRow.apiKey ? decryptApiKey(judgeRow.apiKey) : undefined,
-        defaultParams: JSON.parse(judgeRow.defaultParams),
-        reasoningModel: judgeRow.reasoningModel,
-      },
+      localModel: toJudgeModel(ordered[0]),
+      fallbackModels: ordered.slice(1).map(toJudgeModel),
       escalationThreshold: config.escalationThreshold || 0.85,
     };
   }
@@ -1155,20 +1137,24 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // 构建 Judge 配置（优先还原 run 创建时固化的 Judge，避免重启后 findFirst 选错）
     let judgeOptions: import('@zxbench/core').JudgeOptions | undefined;
     if (config.judgeEnabled) {
-      const judgeRow = config.judgeModelConfigId
-        ? await prisma.modelConfig.findUnique({ where: { id: config.judgeModelConfigId } })
-        : await prisma.modelConfig.findFirst({ where: { modelType: 'judge' } });
-      if (judgeRow) {
+      // 恢复路径同样构建故障转移池：固化的主判优先，其余 judge 兜底
+      const allJudges = await prisma.modelConfig.findMany({ where: { modelType: 'judge' }, orderBy: { createdAt: 'asc' } });
+      if (allJudges.length > 0) {
+        const ordered = config.judgeModelConfigId
+          ? [...allJudges.filter((j) => j.id === config.judgeModelConfigId), ...allJudges.filter((j) => j.id !== config.judgeModelConfigId)]
+          : allJudges;
+        const toJudgeModel = (j: typeof allJudges[number]) => ({
+          id: j.id,
+          name: j.name,
+          provider: j.provider,
+          baseUrl: j.baseUrl,
+          apiKey: j.apiKey ? decryptApiKey(j.apiKey) : undefined,
+          defaultParams: JSON.parse(j.defaultParams),
+          reasoningModel: j.reasoningModel,
+        });
         judgeOptions = {
-          localModel: {
-            id: judgeRow.id,
-            name: judgeRow.name,
-            provider: judgeRow.provider,
-            baseUrl: judgeRow.baseUrl,
-            apiKey: judgeRow.apiKey ? decryptApiKey(judgeRow.apiKey) : undefined,
-            defaultParams: JSON.parse(judgeRow.defaultParams),
-            reasoningModel: judgeRow.reasoningModel,
-          },
+          localModel: toJudgeModel(ordered[0]),
+          fallbackModels: ordered.slice(1).map(toJudgeModel),
           escalationThreshold: config.escalationThreshold || 0.85,
         };
       }
@@ -3183,10 +3169,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(500).send({ success: false, error: errMsg });
     }
   });
-
 }
 
-/** 执行评测（后台）— 支持暂停/继续 + 并行维度测试 */
+/** 执行评测（后台任务）支持暂停/恢复 + 多维度并行 */
 async function runEvaluation(
   runId: string,
   modelConfigRow: { id: string; name: string; provider: string; baseUrl: string; apiKey: string | null; defaultParams: string },
