@@ -37,6 +37,7 @@ export default function ModelConfigPage() {
   const [models, setModels] = useState<ModelItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [togglingTypeId, setTogglingTypeId] = useState<string | null>(null);
   const [editing, setEditing] = useState<ModelItem | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [form] = Form.useForm();
@@ -110,15 +111,19 @@ export default function ModelConfigPage() {
           modelId: extra?.modelId,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       message.destroy('conn-test');
-      if (data.success) {
+      if (data?.success) {
         message.success('连接成功（延迟 ' + data.data.latencyMs + 'ms），模型 ID 与密钥有效');
       } else {
-        message.error(data.error || '连接失败', 8);
+        message.error(data?.error || '连接失败：请求异常', 8);
       }
-    } catch {
+    } catch (err) {
       message.destroy('conn-test');
+      // 网络错误/响应解析失败等真实异常需要反馈给用户；表单校验失败由表单内联提示，无需额外弹错
+      if (err instanceof Error && !err.message.includes('Validation')) {
+        message.error('连接测试请求失败: ' + err.message, 8);
+      }
     } finally {
       setTesting(false);
     }
@@ -131,17 +136,24 @@ export default function ModelConfigPage() {
   };
 
   const onToggleType = async (model: ModelItem, target: 'tested' | 'judge') => {
-    const res = await fetch('/api/models/' + model.id, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ modelType: target }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      message.success(target === 'judge' ? `「${showName(model)}」已设为 AI Judge` : `「${showName(model)}」已设为被测模型`);
-      fetchModels();
-    } else {
-      message.error(data.error || '转换失败', 8);
+    setTogglingTypeId(model.id);
+    try {
+      const res = await fetch('/api/models/' + model.id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelType: target }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.success) {
+        message.success(target === 'judge' ? `「${showName(model)}」已设为 AI Judge` : `「${showName(model)}」已设为被测模型`);
+        fetchModels();
+      } else {
+        message.error(data?.error || '转换失败', 8);
+      }
+    } catch (err) {
+      message.error('类型转换请求失败: ' + (err instanceof Error ? err.message : String(err)), 8);
+    } finally {
+      setTogglingTypeId(null);
     }
   };
 
@@ -203,7 +215,8 @@ export default function ModelConfigPage() {
     try {
       const items = [...ccsSelected].map((key) => {
         const [providerId, model] = key.split('|');
-        return { providerId, model };
+        // override 需随条目传递：后端按 item.override 决定是否覆盖同名同端点的已有配置
+        return { providerId, model, override: ccsOverride };
       });
       const res = await fetch('/api/models/ccswitch/import', {
         method: 'POST',
@@ -277,7 +290,7 @@ export default function ModelConfigPage() {
           title={type === 'tested' ? `将「${showName(r)}」转为 AI Judge？` : `将「${showName(r)}」转为被测模型？`}
           onConfirm={() => onToggleType(r, type === 'tested' ? 'judge' : 'tested')}
         >
-          <Button size="small">{type === 'tested' ? '设为 AI Judge' : '设为被测'}</Button>
+          <Button size="small" loading={togglingTypeId === r.id} disabled={togglingTypeId != null}>{type === 'tested' ? '设为 AI Judge' : '设为被测'}</Button>
         </Popconfirm>
         <Popconfirm title="确认删除？" onConfirm={() => onDelete(r.id)}>
           <Button danger size="small">删除</Button>

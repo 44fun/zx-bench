@@ -27,7 +27,13 @@ export function detectTruncation(
     reasons.push(`output tokens (${outputTokens}) near max_tokens (${maxTokens})`);
   }
 
-  // 文本模式检测（启发式信号，单独记录，不计入 truncated 硬判定）
+  // 未闭合代码围栏：代码题最强截断信号——在 ``` 处被硬切几乎不可能是刻意输出，纳入硬判定
+  const openFences = (content.match(/```/g) || []).length;
+  if (openFences % 2 !== 0) {
+    reasons.push('unclosed code fence');
+  }
+
+  // 文本模式检测（省略号/等待词结尾存在歧义，仅作诊断信号不计入硬判定）
   for (const pattern of TRUNCATION_PATTERNS) {
     if (pattern.test(content.trimEnd())) {
       reasons.push(`matches truncation pattern: ${pattern.source}`);
@@ -35,16 +41,9 @@ export function detectTruncation(
     }
   }
 
-  // 代码块只有开始没有结束
-  const openFences = (content.match(/```/g) || []).length;
-  if (openFences % 2 !== 0) {
-    reasons.push('unclosed code fence');
-  }
-
   return {
-    // 硬判定：仅 token 层面的确凿证据才算真截断；
-    // 文本启发式（如回答以省略号收尾是刻意为之）不得污染截断标记
-    truncated: finishReason === 'length' || outputTokens > maxTokens * 0.95,
+    // 硬判定：token 层面证据 + 未闭合代码围栏；歧义性文本启发式不参与
+    truncated: finishReason === 'length' || outputTokens > maxTokens * 0.95 || openFences % 2 !== 0,
     reasons,
   };
 }
@@ -73,6 +72,6 @@ export function buildOutputMetadata(
     // 「回答中没有出现『结论/最终』等关键词」不代表不完整——数据抽取/代码题的正确答案通常不含这些词，
     // 旧的 `truncated || !containsFinalConclusion` 会把大量正常完成的答案误标为截断，污染归因。
     incomplete: truncated,
-    incompleteReasons: reasons.length > 0 ? reasons : undefined,
+    incompleteReasons: truncated ? reasons : undefined,
   };
 }

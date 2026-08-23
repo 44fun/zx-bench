@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Table, Tag, Descriptions, Collapse, Progress, Button, Space, Tooltip, message, Input, Select, Segmented, Alert } from 'antd';
 import { AuditOutlined, DownloadOutlined, FileSearchOutlined, ReloadOutlined, SearchOutlined, RobotOutlined } from '@ant-design/icons';
@@ -56,6 +56,13 @@ function formatDuration(start: string | null, end: string | null): string {
   return m > 0 ? `${h} 小时 ${m} 分钟` : `${h} 小时`;
 }
 
+/** 归因列与操作列共用的证据判定，避免 includes/startsWith 口径漂移 */
+const isJudgeFailedEvidence = (ev: string[]) => ev.some((e) => e.startsWith('JUDGE_FAILED'));
+const isTruncatedEvidence = (ev: string[]) => {
+  const joined = ev.join('\n');
+  return /incomplete.*truncated|truncated.*incomplete/i.test(joined);
+};
+
 export default function EvalDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -89,13 +96,7 @@ export default function EvalDetail() {
       const json = await res.json();
       if (json.success) {
         message.success(`重判完成：${scenarioId}，新得分 ${json.data.totalScore}（${json.data.judgeModel}）`);
-        setData((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            results: prev.results.map((r) => (r.scenarioId === scenarioId ? { ...r, totalScore: json.data.totalScore } : r)),
-          };
-        });
+        // 后端已同步清理 JUDGE_FAILED 标记并更新 judgeScore/evidence，这里直接全量刷新保持一致
         fetchData();
       } else {
         message.error(`重判失败：${json.error}`, 6);
@@ -109,31 +110,60 @@ export default function EvalDetail() {
 
   // 批量重判全部 Judge 失败的题（后台串行执行）
   const [batchRescoring, setBatchRescoring] = useState(false);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 组件卸载/路由切换时清理轮询，避免对已卸载组件 setState
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, []);
   const handleBatchRescore = useCallback(async () => {
     if (!id || batchRescoring) return;
     setBatchRescoring(true);
     try {
       const res = await fetch(`/api/runs/${id}/rescore-failed`, { method: 'POST' });
       const json = await res.json();
-      if (json.success) {
+      if (json.success && json.data.count > 0) {
         message.info(json.data.message || '已开始后台重判');
-        if (json.data.count > 0) {
-          // 轮询刷新直到完成（粗略：每 10s 刷新一次，最多 30 次）
-          let ticks = 0;
-          const timer = setInterval(() => {
-            ticks++;
+        // 轮询直到重判完成：以 judgeFailed 归零（或连续多次不再变化）为完成信号，兜底 60 次
+        let ticks = 0;
+        let stableTicks = 0;
+        let lastFailed = -1;
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        pollTimerRef.current = setInterval(async () => {
+          ticks++;
+          try {
+            const r = await fetch(`/api/runs/${id}`);
+            const j = await r.json();
             fetchData();
-            if (ticks >= 30) clearInterval(timer);
-          }, 10000);
-        }
+            const failedNow = j?.data?.health?.judgeFailed;
+            if (typeof failedNow === 'number') {
+              if (failedNow === 0 || failedNow === lastFailed) stableTicks++; else stableTicks = 0;
+              lastFailed = failedNow;
+              // 归零即完成；数值连续 3 轮不变视为后台已结束
+              if (failedNow === 0 || stableTicks >= 3) {
+                if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+                setBatchRescoring(false);
+                message.success('批量重判结束');
+                return;
+              }
+            }
+          } catch { /* 网络抖动忽略，下轮继续 */ }
+          if (ticks >= 60) {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            setBatchRescoring(false);
+          }
+        }, 10000);
+        return; // 保持 loading 直到轮询完成
+      } else if (json.success) {
+        message.info(json.data.message || '没有待重判的题目');
       } else {
         message.error(json.error || '批量重判失败');
       }
     } catch {
       message.error('批量重判请求失败');
-    } finally {
-      setBatchRescoring(false);
     }
+    setBatchRescoring(false);
   }, [id, batchRescoring, fetchData]);
 
   // 单题重试（最多同时4题）
@@ -426,10 +456,11 @@ export default function EvalDetail() {
               render: (_: unknown, r: ScenarioResult) => {
                 const ev = (r.evidence || []).join('\n');
                 const tags: React.ReactNode[] = [];
-                if (ev.includes('JUDGE_FAILED')) tags.push(<Tag key="jf" color="red">Judge失败</Tag>);
+                if (isJudgeFailedEvidence(r.evidence || [])) tags.push(<Tag key="jf" color="red">Judge失败</Tag>);
                 if (ev.includes('JUDGE_FAILOVER')) tags.push(<Tag key="jo" color="orange">Judge切换</Tag>);
+                // 两个标签并列展示：曾补救成功 ≠ 最终未截断（补救后仍可能再次截断）
                 if (ev.includes('TRUNCATION_RETRIED')) tags.push(<Tag key="tr" color="green">截断已补救</Tag>);
-                else if (/incomplete.*truncated|truncated.*incomplete/i.test(ev)) tags.push(<Tag key="tc" color="volcano">输出截断</Tag>);
+                if (isTruncatedEvidence(r.evidence || [])) tags.push(<Tag key="tc" color="volcano">输出截断</Tag>);
                 return tags.length > 0 ? <Space size={2} wrap>{tags}</Space> : <span style={{ color: 'var(--text-placeholder)' }}>-</span>;
               },
             },
@@ -456,7 +487,7 @@ export default function EvalDetail() {
             {
               title: '操作', key: 'action', width: 110, fixed: 'right' as const,
               render: (_: unknown, r: ScenarioResult) => {
-                const judgeFailed = (r.evidence || []).some((e) => e.startsWith('JUDGE_FAILED'));
+                const judgeFailed = isJudgeFailedEvidence(r.evidence || []);
                 return (
                   <Space size={0}>
                     <Tooltip title="重新测试此题（重跑模型+判分）">

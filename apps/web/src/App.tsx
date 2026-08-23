@@ -135,7 +135,7 @@ export default function App() {
           </div>
           <div className="swiss-header-actions">
             <Tooltip title={lang === 'zh' ? 'Switch to English' : '切换为中文'}>
-              <button className="theme-toggle" onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')} style={{ marginRight: 8 }}>
+              <button className="theme-toggle" onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}>
                 {lang === 'zh' ? 'EN' : '中'}
               </button>
             </Tooltip>

@@ -164,6 +164,10 @@ export default function EvalHistory() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: group.allRuns.map((r) => r.id) }),
       });
+      if (!res.ok) {
+        message.error(`删除失败（HTTP ${res.status}）`, 6);
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         message.success(`已删除 ${data.data.deleted} 条评测记录`);
@@ -171,8 +175,8 @@ export default function EvalHistory() {
       } else {
         message.error(data.error || '删除失败');
       }
-    } catch {
-      message.error('请求失败');
+    } catch (err) {
+      message.error('请求失败: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -334,7 +338,11 @@ export default function EvalHistory() {
                     </Button>
                     <Popconfirm
                       title="删除该评测组？"
-                      description={`将删除 ${g.allRuns.length} 条运行记录及其全部结果，不可恢复`}
+                      description={
+                        g.status === 'running' || g.status === 'pending'
+                          ? `⚠️ 该组存在运行中的评测，删除将立即中断它，并删除 ${g.allRuns.length} 条运行记录及其全部结果，不可恢复`
+                          : `将删除 ${g.allRuns.length} 条运行记录及其全部结果，不可恢复`
+                      }
                       okText="删除"
                       okButtonProps={{ danger: true }}
                       onConfirm={() => handleDelete(g)}

@@ -135,9 +135,12 @@ export default function Report() {
 
   useEffect(() => {
     if (!id) return;
+    // 语言切换后按新语言重新拉取；忽略过期响应（快速切换语言时旧响应不得覆盖新响应）
+    let stale = false;
     fetch(`/api/runs/${id}/report?lang=${lang}`)
       .then((r) => r.json())
       .then((res) => {
+        if (stale) return;
         if (res.success) {
           setReport(res.data);
           if (res.data.reportContent) {
@@ -146,8 +149,9 @@ export default function Report() {
         }
       })
       .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [id]);
+      .finally(() => { if (!stale) setLoading(false); });
+    return () => { stale = true; };
+  }, [id, lang]);
 
   const handleGenerateReport = async () => {
     if (!id) return;

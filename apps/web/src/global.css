@@ -783,6 +783,11 @@ body {
   transition: all var(--dur-mod) var(--ease-exp) !important;
 }
 
+/* small 尺寸语义保留：全局放大不作用于 sm 按钮（操作列密集按钮组防溢出） */
+.ant-btn-sm {
+  font-size: 14px !important;
+}
+
 .ant-btn-primary {
   color: var(--accent-on) !important;
   background: var(--accent) !important;
@@ -798,8 +803,9 @@ body {
   transform: translateY(-1px) !important;
 }
 
-.ant-btn-primary:disabled,
-.ant-btn-primary:disabled:hover {
+/* loading 态保留 accent 背景以维持"正在执行"反馈，仅真正的 disabled 变灰 */
+.ant-btn-primary:not(.ant-btn-loading):disabled,
+.ant-btn-primary:not(.ant-btn-loading):disabled:hover {
   color: var(--text-placeholder) !important;
   background: var(--bg-hover) !important;
   border-color: var(--border-subtle) !important;

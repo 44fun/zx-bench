@@ -386,6 +386,10 @@ export function buildReportUserPrompt(data: ReportUserPromptData, language: Repo
       prompt += '\n';
     }
   }
+  if (en) {
+    // 英文报告统一半角标点：模板拼接混用的全角标点在此一次性归一，避免逐处修改遗漏
+    prompt = prompt.replace(/：/g, ': ').replace(/（/g, ' (').replace(/）/g, ')').replace(/，/g, ', ');
+  }
   return prompt;
 }
 
@@ -469,7 +473,8 @@ export function buildCompareReportUserPrompt(data: CompareReportUserPromptData, 
     for (const d of m.dimensions) allDimLabels.add(d.dimensionLabel);
   }
 
-  const sortedModels = [...data.models].sort((a, b) => b.overview.averageScore - a.overview.averageScore);
+  // 复用 446 行已排序的 sorted，避免同一数据重复排序
+  const sortedModels = sorted;
 
   prompt += '| ' + s.dim + ' |';
   for (const m of sortedModels) prompt += ' ' + m.modelName + ' |';
@@ -494,5 +499,9 @@ export function buildCompareReportUserPrompt(data: CompareReportUserPromptData, 
     prompt += ' ' + bestModel + '（' + bestScore + '）|\n';
   }
 
+  if (en) {
+    // 与单模型报告一致：英文输出统一半角标点
+    prompt = prompt.replace(/：/g, ': ').replace(/（/g, ' (').replace(/）/g, ')').replace(/，/g, ', ');
+  }
   return prompt;
 }

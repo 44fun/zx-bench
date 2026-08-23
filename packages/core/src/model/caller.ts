@@ -201,7 +201,7 @@ async function parseStreamResponse(
           }
 
           if (chunk.usage) {
-            usage = extractTokenUsage(chunk);
+            usage = extractTokenUsage(chunk, usage);
           }
         } catch {
           // 跳过无法解析的 chunk
@@ -216,7 +216,7 @@ async function parseStreamResponse(
         try {
           const chunk = JSON.parse(dataStr);
           if (chunk.usage) {
-            usage = extractTokenUsage(chunk);
+            usage = extractTokenUsage(chunk, usage);
           }
         } catch { /* ignore */ }
       }
@@ -334,12 +334,14 @@ function buildHeaders(config: ModelConfig): Record<string, string> {
  * 而 timings 里的 prompt_n + cache_n（完整输入）与 predicted_n（完整输出）始终准确，
  * 因此取两者的较大值兜底，确保输入/输出 token 完整统计。
  */
-function extractTokenUsage(chunk: Record<string, unknown>): TokenUsage {
+function extractTokenUsage(chunk: Record<string, unknown>, previous?: TokenUsage): TokenUsage {
   const u = (chunk.usage ?? {}) as Record<string, number>;
   const t = (chunk.timings ?? {}) as Record<string, number>;
   const timingsInput = (t.prompt_n ?? 0) + (t.cache_n ?? 0);
-  const inputTokens = Math.max(u.prompt_tokens ?? 0, timingsInput);
-  const outputTokens = Math.max(u.completion_tokens ?? 0, t.predicted_n ?? 0);
+  const prev = previous ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  // 部分字段缺失（?? 0 兜底为 0）时不得清零已累计的值：与 previous 逐字段取较大值合并
+  const inputTokens = Math.max(u.prompt_tokens ?? 0, timingsInput, prev.inputTokens);
+  const outputTokens = Math.max(u.completion_tokens ?? 0, t.predicted_n ?? 0, prev.outputTokens);
   return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
 }
 

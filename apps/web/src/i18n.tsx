@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 
 export type Language = 'zh' | 'en';
 
@@ -98,21 +98,28 @@ const dict: Record<string, { zh: string; en: string }> = {
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Language>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'en' || saved === 'zh') return saved;
+    // 存储被禁用（隐私模式/安全策略）时 getItem 会抛 SecurityError——Provider 包裹整个应用，抛错即启动崩溃
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved === 'en' || saved === 'zh') return saved;
+    } catch { /* 静默降级为默认语言 */ }
     return 'zh';
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, lang);
+    try {
+      localStorage.setItem(STORAGE_KEY, lang);
+    } catch { /* 配额满或被禁用时静默失败 */ }
     document.documentElement.setAttribute('lang', lang);
   }, [lang]);
 
-  const setLang = (l: Language) => setLangState(l);
-  const t = (key: string) => dict[key]?.[lang] ?? key;
+  const setLang = useCallback((l: Language) => setLangState(l), []);
+  const t = useCallback((key: string) => dict[key]?.[lang] ?? key, [lang]);
+
+  const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
 
   return (
-    <LanguageContext.Provider value={{ lang, setLang, t }}>
+    <LanguageContext.Provider value={value}>
       {children}
     </LanguageContext.Provider>
   );

@@ -224,20 +224,27 @@ function mergeTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   };
 }
 
-/** 判定是否为可重试的瞬态错误（429 限流/5xx/超时/网络抖动） */
+/** 判定是否为可重试的瞬态错误。
+ *  - 仅锚定 caller 固定错误前缀 "Model API error <status>"，429/5xx 视为瞬态；
+ *  - 超时不视为瞬态（与 callModelWithRetry 一致：超时是"思考拖尾"而非网络抖动，
+ *    原地重试大概率仍超时且单模型最坏耗时翻倍）——超时应直接故障转移到下一模型；
+ *  - 纯文本 \b5\d\d\b 会误伤端口号/毫秒数/行号等数字段，故不采用。 */
 function isTransientJudgeError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /\b429\b|rate.?limit|\b5\d\d\b|timeout|timed out|ETIMEDOUT|ECONNRESET|ECONNREFUSED|fetch failed|socket hang up/i.test(msg);
+  const status = msg.match(/Model API error (\d{3})/);
+  if (status) return status[1] === '429' || status[1].startsWith('5');
+  return /ETIMEDOUT|ECONNRESET|ECONNREFUSED|fetch failed|socket hang up|network/i.test(msg);
 }
 
-/** 带退避的单模型重试：瞬态错误重试 1 次，硬错误（401/403 等）立即放弃该模型 */
+/** 带退避的单模型重试：瞬态错误重试 1 次（带随机抖动防惊群），硬错误立即放弃该模型 */
 async function callJudgeModelWithRetry(model: ModelConfig, input: JudgeInput): Promise<JudgeResult> {
   try {
     return await callJudgeModel(model, input);
   } catch (err) {
     if (!isTransientJudgeError(err)) throw err;
-    console.warn(`[judge] ${model.name} 瞬态失败（${err instanceof Error ? err.message : String(err).slice(0, 120)}），2s 后重试 1 次`);
-    await new Promise((r) => setTimeout(r, 2000));
+    const delay = 2000 + Math.random() * 1000;
+    console.warn(`[judge] ${model.name} 瞬态失败（${err instanceof Error ? err.message : String(err).slice(0, 120)}），${Math.round(delay)}ms 后重试 1 次`);
+    await new Promise((r) => setTimeout(r, delay));
     return await callJudgeModel(model, input);
   }
 }

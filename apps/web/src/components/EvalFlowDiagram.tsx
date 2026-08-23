@@ -66,11 +66,17 @@ export default function EvalFlowDiagram() {
   // 题量从场景库实时统计，避免文案与数据脱节
   const [totalQuestions, setTotalQuestions] = useState<number | null>(null);
   useEffect(() => {
-    fetch('/api/scenarios/stats')
+    const controller = new AbortController();
+    fetch('/api/scenarios/stats', { signal: controller.signal })
       .then((r) => r.json())
       .then((res) => { if (res.success) setTotalQuestions(res.data.total); })
-      .catch(console.error);
+      .catch((err) => { if ((err as Error)?.name !== 'AbortError') console.error(err); });
+    return () => controller.abort();
   }, []);
+
+  const dispatchDesc = totalQuestions !== null
+    ? `全局并发池分发 ${totalQuestions} 道题目至各维度`
+    : '全局并发池分发题目至各维度';
 
   return (
     <div className="ef-stage">
@@ -197,7 +203,7 @@ export default function EvalFlowDiagram() {
               </div>
               <div className="ef-en">{s.en}</div>
               <div className="ef-title">{s.title}</div>
-              <div className="ef-desc">{s.en === 'DISPATCH' ? `全局并发池分发${totalQuestions !== null ? ` ${totalQuestions} ` : ' '}道题目至各维度` : s.desc}</div>
+              <div className="ef-desc">{s.en === 'DISPATCH' ? dispatchDesc : s.desc}</div>
             </div>
             {i < STEPS.length - 1 && (
               <div className="ef-connector">

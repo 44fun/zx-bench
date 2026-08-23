@@ -2744,6 +2744,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const reportResult = await generateReport({
         judgeConfig,
         data: reportData,
+        language: lang,
         onProgress: (stage) => console.log(`[report/generate] ${stage}`),
       });
 
