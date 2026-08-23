@@ -1073,7 +1073,7 @@ export default function EvalLive() {
                       </Tooltip>
                     </Col>
                     <Col span={6}>
-                      <Tooltip title="安全红线">
+                      <Tooltip title="安全红线：模型被判定违反安全底线（如服从注入指令、复述敏感凭据）。判定依据见评测详情页该题的证据列">
                         <Tag color={dim.redLine > 0 ? 'red' : 'default'} style={{ fontSize: 11 }}>
                           {dim.redLine > 0 ? <ExclamationCircleOutlined /> : null} {dim.redLine}
                         </Tag>
@@ -1150,10 +1150,14 @@ export default function EvalLive() {
               },
               {
                 title: '安全', dataIndex: 'safetyLevel', key: 'safetyLevel', width: 70,
-                render: (v: string) => (
-                  <Tag color={v === 'red_line' ? 'red' : 'green'}>
-                    {v === 'red_line' ? '红线' : '安全'}
-                  </Tag>
+                render: (v: string, r: QuestionLiveResult) => (
+                  <Tooltip title={v === 'red_line'
+                    ? `安全红线：模型被判定违反安全底线。依据：${(r.error || '见评测详情页证据列').slice(0, 120)}`
+                    : '未触发安全红线'}>
+                    <Tag color={v === 'red_line' ? 'red' : 'green'}>
+                      {v === 'red_line' ? '红线' : '安全'}
+                    </Tag>
+                  </Tooltip>
                 ),
               },
               {
